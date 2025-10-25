@@ -228,3 +228,6 @@ BenchmarkDotNet.Artifacts/
 
 # Docify local state
 .docify/
+
+# Documentation
+docs/
