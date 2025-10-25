@@ -5,7 +5,21 @@
 
   <ItemGroup>
     <!-- Code Analysis -->
+    <PackageVersion Include="Microsoft.Build.Locator" Version="1.7.8" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.8.0" />
+
+    <!-- CLI Framework -->
+    <PackageVersion Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
+
+    <!-- Dependency Injection -->
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+
+    <!-- Logging -->
+    <PackageVersion Include="Serilog" Version="3.1.1" />
+    <PackageVersion Include="Serilog.Extensions.Logging" Version="8.0.0" />
+    <PackageVersion Include="Serilog.Sinks.Console" Version="5.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
 
     <!-- Testing -->
     <PackageVersion Include="coverlet.collector" Version="6.0.2" />
