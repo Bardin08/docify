@@ -1,5 +1,6 @@
 ﻿using System.CommandLine;
 using Docify.CLI.Commands;
+using Docify.CLI.Formatters;
 using Docify.Core.Analyzers;
 using Docify.Core.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
