@@ -10,11 +10,11 @@ namespace Docify.CLI.Formatters;
 public class TextReportFormatter(ILogger<TextReportFormatter> logger) : ReportFormatterBase, IReportFormatter
 {
     /// <inheritdoc/>
-    public string Format(AnalysisResult result)
+    public string Format(AnalysisResult result, bool includeContext = false)
     {
         ArgumentNullException.ThrowIfNull(result);
 
-        logger.LogDebug("Generated text report for {ProjectPath}", result.ProjectPath);
+        logger.LogDebug("Generated text report for {ProjectPath} (includeContext: {IncludeContext})", result.ProjectPath, includeContext);
 
         var sb = new StringBuilder();
         var projectName = Path.GetFileNameWithoutExtension(result.ProjectPath);
@@ -76,6 +76,15 @@ public class TextReportFormatter(ILogger<TextReportFormatter> logger) : ReportFo
                     sb.AppendLine($"    - {memberName}");
                     sb.AppendLine($"      Signature: {api.Signature}");
                     sb.AppendLine($"      Location:  {api.FilePath}:{api.LineNumber}");
+
+                    if (includeContext && api.Context != null)
+                    {
+                        sb.AppendLine($"      LLM Context:");
+                        sb.AppendLine($"        Implementation Body: {(string.IsNullOrWhiteSpace(api.Context.ImplementationBody) ? "N/A" : $"{api.Context.ImplementationBody.Length} chars")}");
+                        sb.AppendLine($"        Called Methods:      {api.Context.CalledMethodsDocumentation.Count}");
+                        sb.AppendLine($"        Call Sites:          {api.Context.CallSites.Count}");
+                        sb.AppendLine($"        Token Estimate:      {api.Context.TokenEstimate}");
+                    }
                 }
 
                 sb.AppendLine();
