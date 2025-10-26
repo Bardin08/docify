@@ -2,6 +2,7 @@ using Docify.Core.Models;
 using Docify.LLM.Abstractions;
 using Docify.LLM.PromptEngineering;
 using Docify.LLM.Providers;
+using Docify.LLM.Validation;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
@@ -25,7 +26,7 @@ public class ClaudeProviderTests
         _mockSecretStore.Setup(s => s.GetApiKey("anthropic"))
             .ReturnsAsync("test-api-key");
 
-        _provider = new ClaudeProvider(_mockSecretStore.Object, _promptBuilder, _mockLogger.Object);
+        _provider = new ClaudeProvider(_mockSecretStore.Object, _promptBuilder, new OutputValidator(), _mockLogger.Object);
     }
 
     [Fact]
@@ -33,7 +34,7 @@ public class ClaudeProviderTests
     {
         // Act & Assert
         Should.Throw<ArgumentNullException>(() =>
-            new ClaudeProvider(null!, _promptBuilder, _mockLogger.Object));
+            new ClaudeProvider(null!, _promptBuilder, new OutputValidator(), _mockLogger.Object));
     }
 
     [Fact]
@@ -41,7 +42,7 @@ public class ClaudeProviderTests
     {
         // Act & Assert
         Should.Throw<ArgumentNullException>(() =>
-            new ClaudeProvider(_mockSecretStore.Object, null!, _mockLogger.Object));
+            new ClaudeProvider(_mockSecretStore.Object, null!, new OutputValidator(), _mockLogger.Object));
     }
 
     [Fact]
@@ -49,7 +50,7 @@ public class ClaudeProviderTests
     {
         // Act & Assert
         Should.Throw<ArgumentNullException>(() =>
-            new ClaudeProvider(_mockSecretStore.Object, _promptBuilder, null!));
+            new ClaudeProvider(_mockSecretStore.Object, _promptBuilder, new OutputValidator(), null!));
     }
 
     [Fact]

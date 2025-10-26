@@ -7,6 +7,7 @@ using Docify.LLM.Exceptions;
 using Docify.LLM.Models;
 using Docify.LLM.PromptEngineering;
 using Docify.LLM.Utilities;
+using Docify.LLM.Validation;
 using Microsoft.Extensions.Logging;
 
 namespace Docify.LLM.Providers;
@@ -18,6 +19,7 @@ namespace Docify.LLM.Providers;
 public class ClaudeProvider(
     ISecretStore secretStore,
     PromptBuilder promptBuilder,
+    OutputValidator outputValidator,
     ILogger<ClaudeProvider> logger) : ILlmProvider
 {
     private const string _modelName = "claude-sonnet-4-5";
@@ -27,6 +29,9 @@ public class ClaudeProvider(
 
     private readonly PromptBuilder _promptBuilder =
         promptBuilder ?? throw new ArgumentNullException(nameof(promptBuilder));
+
+    private readonly OutputValidator _outputValidator =
+        outputValidator ?? throw new ArgumentNullException(nameof(outputValidator));
 
     private readonly ILogger<ClaudeProvider> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -88,29 +93,32 @@ public class ClaudeProvider(
         var textContent = response.Content?.OfType<TextContent>().FirstOrDefault();
         var generatedXml = textContent?.Text ?? string.Empty;
 
-        if (string.IsNullOrWhiteSpace(generatedXml))
-            throw new ProviderException("anthropic", "Claude API returned empty response");
-
         _logger.LogDebug("Received response from Claude for {ApiSymbolId} ({Length} characters)", context.ApiSymbolId,
             generatedXml.Length);
 
-        // Validate XML
-        try
+        // Validate XML using OutputValidator
+        var validationResult = _outputValidator.ValidateXmlDocumentation(generatedXml, context);
+
+        if (!validationResult.IsValid)
         {
-            _ = XDocument.Parse($"<root>{generatedXml}</root>");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Generated documentation is not valid XML for {ApiSymbolId}", context.ApiSymbolId);
-            throw new ProviderException("anthropic", "Generated documentation is not valid XML", ex);
+            foreach (var issue in validationResult.Issues)
+                _logger.LogWarning("Validation issue for {ApiSymbolId}: {Issue}", context.ApiSymbolId, issue);
+
+            throw new ProviderException("anthropic", validationResult.Issues[0]);
         }
 
-        // Ensure <summary> tag is present (required)
-        if (!generatedXml.Contains("<summary>", StringComparison.OrdinalIgnoreCase))
+        // Use cleaned XML if extraction was performed
+        if (validationResult.CleanedXml != null)
         {
-            _logger.LogWarning("Generated documentation missing required <summary> tag for {ApiSymbolId}",
-                context.ApiSymbolId);
-            throw new ProviderException("anthropic", "Generated documentation missing required <summary> tag");
+            _logger.LogInformation("Extracted XML from non-XML response for {ApiSymbolId}", context.ApiSymbolId);
+            generatedXml = validationResult.CleanedXml;
+        }
+
+        // Log any non-critical issues (warnings)
+        if (validationResult.Issues.Count > 0)
+        {
+            foreach (var issue in validationResult.Issues)
+                _logger.LogWarning("Validation warning for {ApiSymbolId}: {Issue}", context.ApiSymbolId, issue);
         }
 
         // Calculate actual token usage and cost

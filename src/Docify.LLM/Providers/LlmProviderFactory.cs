@@ -2,6 +2,7 @@ using Docify.Core.Models;
 using Docify.LLM.Abstractions;
 using Docify.LLM.Exceptions;
 using Docify.LLM.PromptEngineering;
+using Docify.LLM.Validation;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
 
@@ -131,8 +132,8 @@ public class LlmProviderFactory(ISecretStore secretStore, PromptBuilder promptBu
     private ILlmProvider CreateProviderInstance(string providerName) =>
         providerName.ToLowerInvariant() switch
         {
-            "anthropic" => new ClaudeProvider(_secretStore, _promptBuilder, _loggerFactory.CreateLogger<ClaudeProvider>()),
-            "openai" => new GptProvider(_secretStore, _loggerFactory.CreateLogger<GptProvider>()),
+            "anthropic" => new ClaudeProvider(_secretStore, _promptBuilder, new OutputValidator(), _loggerFactory.CreateLogger<ClaudeProvider>()),
+            "openai" => new GptProvider(_secretStore, _promptBuilder, new OutputValidator(), _loggerFactory.CreateLogger<GptProvider>()),
             _ => throw new ConfigurationException($"Unknown provider '{providerName}'. Supported: anthropic, openai")
         };
 

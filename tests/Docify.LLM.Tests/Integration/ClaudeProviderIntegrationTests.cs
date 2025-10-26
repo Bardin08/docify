@@ -2,6 +2,7 @@ using Docify.Core.Models;
 using Docify.LLM.Abstractions;
 using Docify.LLM.PromptEngineering;
 using Docify.LLM.Providers;
+using Docify.LLM.Validation;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
@@ -24,7 +25,7 @@ public class ClaudeProviderIntegrationTests
         var promptBuilder = new PromptBuilder();
         var mockLogger = new Mock<ILogger<ClaudeProvider>>();
 
-        var provider = new ClaudeProvider(mockSecretStore.Object, promptBuilder, mockLogger.Object);
+        var provider = new ClaudeProvider(mockSecretStore.Object, promptBuilder, new OutputValidator(), mockLogger.Object);
 
         // Act - Verify provider initialization and basic properties
         var providerName = provider.GetProviderName();
@@ -77,7 +78,7 @@ public class ClaudeProviderIntegrationTests
         var mockSecretStore = new Mock<ISecretStore>();
         var promptBuilder = new PromptBuilder();
         var mockLogger = new Mock<ILogger<ClaudeProvider>>();
-        var provider = new ClaudeProvider(mockSecretStore.Object, promptBuilder, mockLogger.Object);
+        var provider = new ClaudeProvider(mockSecretStore.Object, promptBuilder, new OutputValidator(), mockLogger.Object);
 
         var context = CreateCompleteApiContext();
 
@@ -102,7 +103,7 @@ public class ClaudeProviderIntegrationTests
 
         var promptBuilder = new PromptBuilder();
         var mockLogger = new Mock<ILogger<ClaudeProvider>>();
-        var provider = new ClaudeProvider(mockSecretStore.Object, promptBuilder, mockLogger.Object);
+        var provider = new ClaudeProvider(mockSecretStore.Object, promptBuilder, new OutputValidator(), mockLogger.Object);
 
         var context = CreateSimpleApiContext();
 
@@ -121,7 +122,7 @@ public class ClaudeProviderIntegrationTests
         var mockSecretStore = new Mock<ISecretStore>();
         var promptBuilder = new PromptBuilder();
         var mockLogger = new Mock<ILogger<ClaudeProvider>>();
-        var provider = new ClaudeProvider(mockSecretStore.Object, promptBuilder, mockLogger.Object);
+        var provider = new ClaudeProvider(mockSecretStore.Object, promptBuilder, new OutputValidator(), mockLogger.Object);
 
         // Act & Assert - Initially no API key
         mockSecretStore.Setup(s => s.GetApiKey("anthropic"))

@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="Anthropic.SDK" />
+    <PackageReference Include="OpenAI" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
