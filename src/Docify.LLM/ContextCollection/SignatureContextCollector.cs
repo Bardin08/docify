@@ -1,6 +1,7 @@
 using Docify.Core.Models;
 using Docify.LLM.Abstractions;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.Logging;
 using System.Collections.Immutable;
 using System.Text;
@@ -13,7 +14,8 @@ namespace Docify.LLM.ContextCollection;
 /// </summary>
 public class SignatureContextCollector(
     ILogger<SignatureContextCollector> logger,
-    ICallSiteCollector callSiteCollector) : IContextCollector
+    ICallSiteCollector callSiteCollector,
+    IStalenessDetector? stalenessDetector = null) : IContextCollector
 {
     /// <inheritdoc/>
     public async Task<ApiContext> CollectContext(
@@ -38,7 +40,25 @@ public class SignatureContextCollector(
         // Collect call sites (usage examples)
         var callSites = await callSiteCollector.CollectCallSites(symbol, compilation, cancellationToken: cancellationToken);
 
-        var tokenEstimate = EstimateTokenCount(parameterTypes, returnType, inheritanceHierarchy, xmlDocComments, callSites);
+        // Extract implementation body
+        var implementationBody = ExtractImplementationBody(roslynSymbol);
+        var isImplementationTruncated = false;
+
+        if (implementationBody != null)
+        {
+            var bodyTokenCount = implementationBody.Length / 4;
+            if (bodyTokenCount > 500)
+            {
+                implementationBody = implementationBody[..2000] + "\n[... implementation truncated for token budget ...]";
+                isImplementationTruncated = true;
+            }
+        }
+
+        // Analyze internal method calls
+        var calledMethods = AnalyzeInternalMethodCalls(roslynSymbol, compilation);
+        var calledMethodsDocs = CollectCalledMethodsDocumentation(symbol, calledMethods);
+
+        var tokenEstimate = EstimateTokenCount(parameterTypes, returnType, inheritanceHierarchy, xmlDocComments, callSites, implementationBody, calledMethodsDocs);
 
         logger.LogDebug("Collected signature context for {ApiName}", symbol.FullyQualifiedName);
 
@@ -51,7 +71,10 @@ public class SignatureContextCollector(
             RelatedTypes = relatedTypes,
             XmlDocComments = xmlDocComments,
             TokenEstimate = tokenEstimate,
-            CallSites = callSites
+            CallSites = callSites,
+            ImplementationBody = implementationBody,
+            CalledMethodsDocumentation = calledMethodsDocs,
+            IsImplementationTruncated = isImplementationTruncated
         };
     }
 
@@ -264,7 +287,7 @@ public class SignatureContextCollector(
         return true;
     }
 
-    private int EstimateTokenCount(List<string> parameters, string? returnType, List<string> hierarchy, string? xmlDocs, List<CallSiteInfo> callSites)
+    private int EstimateTokenCount(List<string> parameters, string? returnType, List<string> hierarchy, string? xmlDocs, List<CallSiteInfo> callSites, string? implementationBody, List<CalledMethodDoc> calledMethodsDocs)
     {
         // Simple heuristic: character count / 4 (rough approximation for English text tokens)
         var charCount = 0;
@@ -281,6 +304,16 @@ public class SignatureContextCollector(
             charCount += callSite.CallExpression.Length;
             charCount += callSite.ContextBefore.Sum(line => line.Length);
             charCount += callSite.ContextAfter.Sum(line => line.Length);
+        }
+
+        // Include implementation body
+        charCount += implementationBody?.Length ?? 0;
+
+        // Include called methods documentation
+        foreach (var calledMethodDoc in calledMethodsDocs)
+        {
+            charCount += calledMethodDoc.MethodName.Length;
+            charCount += calledMethodDoc.XmlDocumentation.Length;
         }
 
         return charCount / 4;
@@ -381,6 +414,178 @@ public class SignatureContextCollector(
             }
         }
 
+        // Add implementation body
+        if (!string.IsNullOrWhiteSpace(context.ImplementationBody))
+        {
+            sb.AppendLine("Implementation:");
+            foreach (var line in context.ImplementationBody.Split('\n'))
+                sb.AppendLine($"  > {line.TrimEnd()}");
+
+            if (context.IsImplementationTruncated)
+                sb.AppendLine("  > [Note: Implementation truncated for token budget]");
+
+            sb.AppendLine();
+        }
+
+        if (context.CalledMethodsDocumentation.Count <= 0)
+            return sb.ToString().TrimEnd();
+
+        sb.AppendLine("Called Methods Documentation:");
+        foreach (var calledMethod in context.CalledMethodsDocumentation)
+        {
+            sb.AppendLine($"  Called method '{calledMethod.MethodName}':");
+            foreach (var line in calledMethod.XmlDocumentation.Split('\n'))
+                sb.AppendLine($"    > {line.TrimEnd()}");
+            sb.AppendLine();
+        }
+
         return sb.ToString().TrimEnd();
+    }
+
+    private string? ExtractImplementationBody(ISymbol symbol)
+    {
+        var syntaxReference = symbol.DeclaringSyntaxReferences.FirstOrDefault();
+        if (syntaxReference == null)
+            return null;
+
+        var syntaxNode = syntaxReference.GetSyntax();
+
+        return syntaxNode switch
+        {
+            MethodDeclarationSyntax methodDecl => ExtractMethodBody(methodDecl),
+            PropertyDeclarationSyntax propertyDecl => ExtractPropertyBody(propertyDecl),
+            IndexerDeclarationSyntax indexerDecl => ExtractIndexerBody(indexerDecl),
+            _ => null
+        };
+    }
+
+    private string? ExtractMethodBody(MethodDeclarationSyntax methodDecl)
+    {
+        if (methodDecl.Body != null)
+            return methodDecl.Body.ToFullString();
+
+        if (methodDecl.ExpressionBody != null)
+            return methodDecl.ExpressionBody.ToFullString();
+
+        return null;
+    }
+
+    private string? ExtractPropertyBody(PropertyDeclarationSyntax propertyDecl)
+    {
+        if (propertyDecl.ExpressionBody != null)
+            return propertyDecl.ExpressionBody.ToFullString();
+
+        if (propertyDecl.AccessorList != null)
+            return propertyDecl.AccessorList.ToFullString();
+
+        return null;
+    }
+
+    private string? ExtractIndexerBody(IndexerDeclarationSyntax indexerDecl)
+    {
+        if (indexerDecl.ExpressionBody != null)
+            return indexerDecl.ExpressionBody.ToFullString();
+
+        if (indexerDecl.AccessorList != null)
+            return indexerDecl.AccessorList.ToFullString();
+
+        return null;
+    }
+
+    private List<IMethodSymbol> AnalyzeInternalMethodCalls(ISymbol symbol, Compilation compilation)
+    {
+        var calledMethods = new List<IMethodSymbol>();
+
+        var syntaxReference = symbol.DeclaringSyntaxReferences.FirstOrDefault();
+        if (syntaxReference == null)
+            return calledMethods;
+
+        var syntaxNode = syntaxReference.GetSyntax();
+        var bodySyntax = GetBodySyntax(syntaxNode);
+
+        if (bodySyntax == null)
+            return calledMethods;
+
+        var semanticModel = compilation.GetSemanticModel(syntaxReference.SyntaxTree);
+        var invocations = bodySyntax.DescendantNodes().OfType<InvocationExpressionSyntax>();
+
+        foreach (var invocation in invocations)
+        {
+            var symbolInfo = semanticModel.GetSymbolInfo(invocation);
+            if (symbolInfo.Symbol is IMethodSymbol methodSymbol)
+            {
+                // Filter to only include methods from same project (exclude external libraries)
+                if (SymbolEqualityComparer.Default.Equals(methodSymbol.ContainingAssembly, symbol.ContainingAssembly))
+                {
+                    calledMethods.Add(methodSymbol);
+                }
+            }
+        }
+
+        return calledMethods;
+    }
+
+    private SyntaxNode? GetBodySyntax(SyntaxNode syntaxNode)
+    {
+        return syntaxNode switch
+        {
+            MethodDeclarationSyntax methodDecl => (SyntaxNode?)methodDecl.Body ?? methodDecl.ExpressionBody,
+            PropertyDeclarationSyntax propertyDecl => (SyntaxNode?)propertyDecl.AccessorList ?? propertyDecl.ExpressionBody,
+            IndexerDeclarationSyntax indexerDecl => (SyntaxNode?)indexerDecl.AccessorList ?? indexerDecl.ExpressionBody,
+            _ => null
+        };
+    }
+
+    private List<CalledMethodDoc> CollectCalledMethodsDocumentation(ApiSymbol symbol, List<IMethodSymbol> calledMethods)
+    {
+        var calledMethodsDocs = new List<CalledMethodDoc>();
+
+        if (stalenessDetector == null)
+        {
+            logger.LogDebug("Git unavailable, treating all called method documentation as fresh");
+        }
+
+        foreach (var methodSymbol in calledMethods)
+        {
+            var xmlDoc = methodSymbol.GetDocumentationCommentXml();
+            if (string.IsNullOrWhiteSpace(xmlDoc))
+                continue;
+
+            // Check staleness if detector available
+            bool isFresh = true;
+            if (stalenessDetector != null)
+            {
+                // Create temporary ApiSymbol for called method to check staleness
+                var calledMethodSymbol = new ApiSymbol
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    SymbolType = Core.Models.SymbolType.Method,
+                    FullyQualifiedName = GetFullyQualifiedName(methodSymbol),
+                    FilePath = methodSymbol.Locations.FirstOrDefault()?.SourceTree?.FilePath ?? string.Empty,
+                    LineNumber = methodSymbol.Locations.FirstOrDefault()?.GetLineSpan().StartLinePosition.Line ?? 0,
+                    Signature = methodSymbol.ToDisplayString(),
+                    AccessModifier = methodSymbol.DeclaredAccessibility.ToString(),
+                    IsStatic = methodSymbol.IsStatic,
+                    HasDocumentation = !string.IsNullOrWhiteSpace(xmlDoc),
+                    DocumentationStatus = DocumentationStatus.Documented
+                };
+
+                var stalenessResult = stalenessDetector.DetectStaleDocumentation(calledMethodSymbol);
+                isFresh = !stalenessResult.IsStale;
+            }
+
+            // Only include fresh documentation
+            if (isFresh)
+            {
+                calledMethodsDocs.Add(new CalledMethodDoc
+                {
+                    MethodName = GetFullyQualifiedName(methodSymbol),
+                    XmlDocumentation = xmlDoc,
+                    IsFresh = true
+                });
+            }
+        }
+
+        return calledMethodsDocs;
     }
 }

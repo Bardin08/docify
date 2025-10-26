@@ -323,7 +323,10 @@ public class SignatureContextCollectorTests
             RelatedTypes = new List<string> { "string", "int", "bool" },
             XmlDocComments = null,
             TokenEstimate = 10,
-            CallSites = []
+            CallSites = [],
+            ImplementationBody = null,
+            CalledMethodsDocumentation = [],
+            IsImplementationTruncated = false
         };
 
         // Act
@@ -350,7 +353,10 @@ public class SignatureContextCollectorTests
             RelatedTypes = new List<string> { "string", "int", "bool" },
             XmlDocComments = "Base class documentation",
             TokenEstimate = 20,
-            CallSites = []
+            CallSites = [],
+            ImplementationBody = null,
+            CalledMethodsDocumentation = [],
+            IsImplementationTruncated = false
         };
 
         // Act

@@ -44,6 +44,21 @@ public record ApiContext
     /// Usage examples showing how the API is called in the codebase.
     /// </summary>
     public required List<CallSiteInfo> CallSites { get; init; }
+
+    /// <summary>
+    /// Full source code of the method or property implementation body.
+    /// </summary>
+    public string? ImplementationBody { get; init; }
+
+    /// <summary>
+    /// Fresh documentation from internally called methods.
+    /// </summary>
+    public required List<CalledMethodDoc> CalledMethodsDocumentation { get; init; }
+
+    /// <summary>
+    /// Indicates if implementation body was truncated for token budget.
+    /// </summary>
+    public required bool IsImplementationTruncated { get; init; }
 }
 
 /// <summary>
