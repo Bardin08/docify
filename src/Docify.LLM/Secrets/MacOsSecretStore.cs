@@ -20,7 +20,7 @@ public class MacOsSecretStore(ILogger<MacOsSecretStore> logger) : SecretStoreBas
         try
         {
             // Delete existing key if present
-            await DeleteApiKey(provider).ConfigureAwait(false);
+            await DeleteApiKey(provider);
 
             var serviceName = $"{ServiceName}.{provider}";
             var passwordBytes = Encoding.UTF8.GetBytes(apiKey);

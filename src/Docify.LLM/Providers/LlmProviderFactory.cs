@@ -1,6 +1,8 @@
 using Docify.Core.Models;
 using Docify.LLM.Abstractions;
 using Docify.LLM.Exceptions;
+using Docify.LLM.PromptEngineering;
+using Docify.LLM.Validation;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
 
@@ -9,14 +11,15 @@ namespace Docify.LLM.Providers;
 /// <summary>
 /// Factory for creating LLM provider instances with automatic fallback support.
 /// </summary>
-public class LlmProviderFactory(ISecretStore secretStore, ILoggerFactory loggerFactory)
+public class LlmProviderFactory(ISecretStore secretStore, PromptBuilder promptBuilder, ILoggerFactory loggerFactory)
 {
     private readonly ISecretStore _secretStore = secretStore ?? throw new ArgumentNullException(nameof(secretStore));
+    private readonly PromptBuilder _promptBuilder = promptBuilder ?? throw new ArgumentNullException(nameof(promptBuilder));
     private readonly ILoggerFactory _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
     private readonly ILogger<LlmProviderFactory> _logger = loggerFactory.CreateLogger<LlmProviderFactory>();
 
     private readonly Dictionary<string, int> _failureCounters = new();
-    private const int MaxConsecutiveFailures = 5;
+    private const int _maxConsecutiveFailures = 5;
 
     private ILlmProvider? _currentProvider;
     private LlmConfiguration? _currentConfig;
@@ -32,7 +35,6 @@ public class LlmProviderFactory(ISecretStore secretStore, ILoggerFactory loggerF
     {
         ArgumentNullException.ThrowIfNull(config);
 
-        // If config changed, reset current provider
         if (_currentConfig == null || !ConfigEquals(_currentConfig, config))
         {
             _currentConfig = config;
@@ -40,9 +42,8 @@ public class LlmProviderFactory(ISecretStore secretStore, ILoggerFactory loggerF
             _failureCounters.Clear();
         }
 
-        // Check if primary provider has too many failures
         var primaryProvider = config.PrimaryProvider;
-        if (_failureCounters.TryGetValue(primaryProvider, out var failures) && failures >= MaxConsecutiveFailures)
+        if (_failureCounters.TryGetValue(primaryProvider, out var failures) && failures >= _maxConsecutiveFailures)
         {
             _logger.LogWarning(
                 "Primary provider {PrimaryProvider} has {Failures} consecutive failures. Checking fallback...",
@@ -53,42 +54,50 @@ public class LlmProviderFactory(ISecretStore secretStore, ILoggerFactory loggerF
             {
                 throw new ProviderUnavailableException(
                     primaryProvider,
-                    $"Primary provider '{primaryProvider}' unavailable after {MaxConsecutiveFailures} consecutive failures and no fallback configured. " +
+                    $"Primary provider '{primaryProvider}' unavailable after {_maxConsecutiveFailures} consecutive failures and no fallback configured. " +
                     $"Run: docify config set-fallback <provider>");
             }
 
-            // Prompt user to switch to fallback
-            var confirmed = AnsiConsole.Confirm(
-                $"Primary provider '{primaryProvider}' unavailable. Switch to fallback provider '{config.FallbackProvider}'?",
-                defaultValue: true);
-
-            if (confirmed)
-            {
-                _logger.LogInformation(
-                    "Switching from {PrimaryProvider} to fallback provider {FallbackProvider}",
-                    primaryProvider, config.FallbackProvider);
-
-                // Switch to fallback provider
-                _currentProvider = CreateProviderInstance(config.FallbackProvider);
-                _failureCounters.Clear();  // Reset counters
-            }
-            else
-            {
-                throw new ProviderUnavailableException(
-                    primaryProvider,
-                    $"User declined to switch to fallback provider. Cannot continue with unavailable primary provider '{primaryProvider}'.");
-            }
+            TrySwitchToFallbackProvider(config, primaryProvider);
         }
 
         // Verify provider is available
         if (_currentProvider != null && await _currentProvider.IsAvailable())
-        {
             return _currentProvider;
-        }
 
         var providerName = _currentProvider?.GetProviderName() ?? primaryProvider;
         throw new InvalidOperationException(
             $"API key for provider '{providerName}' not found. Run: docify config set-api-key {providerName}");
+    }
+
+    private void TrySwitchToFallbackProvider(LlmConfiguration config, string primaryProvider)
+    {
+        var confirmed = AnsiConsole.Confirm(
+            $"Primary provider '{primaryProvider}' unavailable. Switch to fallback provider '{config.FallbackProvider}'?",
+            defaultValue: true);
+
+        if (confirmed)
+        {
+            _logger.LogInformation(
+                "Switching from {PrimaryProvider} to fallback provider {FallbackProvider}",
+                primaryProvider, config.FallbackProvider);
+
+            if (string.IsNullOrWhiteSpace(config.FallbackProvider))
+                throw new ConfigurationException(
+                    "Fallback provider is not configured. Cannot switch providers.");
+
+            if (config.FallbackProvider == config.PrimaryProvider)
+                throw new ConfigurationException(
+                    "Fallback provider cannot be the same as the primary provider.");
+
+            // Switch to fallback provider
+            _currentProvider = CreateProviderInstance(config.FallbackProvider);
+            _failureCounters.Clear();  // Reset counters
+        }
+        else
+            throw new ProviderUnavailableException(
+                primaryProvider,
+                $"User declined to switch to fallback provider. Cannot continue with unavailable primary provider '{primaryProvider}'.");
     }
 
     /// <summary>
@@ -112,10 +121,7 @@ public class LlmProviderFactory(ISecretStore secretStore, ILoggerFactory loggerF
     {
         ArgumentNullException.ThrowIfNull(providerName);
 
-        if (!_failureCounters.ContainsKey(providerName))
-        {
-            _failureCounters[providerName] = 0;
-        }
+        _failureCounters.TryAdd(providerName, 0);
 
         _failureCounters[providerName]++;
         _logger.LogWarning(
@@ -123,21 +129,17 @@ public class LlmProviderFactory(ISecretStore secretStore, ILoggerFactory loggerF
             providerName, _failureCounters[providerName]);
     }
 
-    private ILlmProvider CreateProviderInstance(string providerName)
-    {
-        return providerName.ToLowerInvariant() switch
+    private ILlmProvider CreateProviderInstance(string providerName) =>
+        providerName.ToLowerInvariant() switch
         {
-            "anthropic" => new ClaudeProvider(_secretStore, _loggerFactory.CreateLogger<ClaudeProvider>()),
-            "openai" => new GptProvider(_secretStore, _loggerFactory.CreateLogger<GptProvider>()),
+            "anthropic" => new ClaudeProvider(_secretStore, _promptBuilder, new OutputValidator(), _loggerFactory.CreateLogger<ClaudeProvider>()),
+            "openai" => new GptProvider(_secretStore, _promptBuilder, new OutputValidator(), _loggerFactory.CreateLogger<GptProvider>()),
             _ => throw new ConfigurationException($"Unknown provider '{providerName}'. Supported: anthropic, openai")
         };
-    }
 
-    private static bool ConfigEquals(LlmConfiguration a, LlmConfiguration b)
-    {
-        return a.PrimaryProvider == b.PrimaryProvider &&
-               a.PrimaryModel == b.PrimaryModel &&
-               a.FallbackProvider == b.FallbackProvider &&
-               a.FallbackModel == b.FallbackModel;
-    }
+    private static bool ConfigEquals(LlmConfiguration a, LlmConfiguration b) =>
+        a.PrimaryProvider == b.PrimaryProvider &&
+        a.PrimaryModel == b.PrimaryModel &&
+        a.FallbackProvider == b.FallbackProvider &&
+        a.FallbackModel == b.FallbackModel;
 }

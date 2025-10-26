@@ -1,6 +1,7 @@
 using Docify.LLM.Abstractions;
 using Docify.LLM.Configuration;
 using Docify.LLM.ContextCollection;
+using Docify.LLM.PromptEngineering;
 using Docify.LLM.Providers;
 using Docify.LLM.Secrets;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,6 +32,9 @@ public static class ServiceCollectionExtensions
             var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
             return SecretStoreFactory.GetPlatformSecretStore(loggerFactory);
         });
+
+        // Prompt engineering
+        services.AddSingleton<PromptBuilder>();
 
         // Provider factory
         services.AddSingleton<LlmProviderFactory>();
