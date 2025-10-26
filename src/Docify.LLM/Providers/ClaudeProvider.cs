@@ -20,7 +20,7 @@ public class ClaudeProvider(
     PromptBuilder promptBuilder,
     ILogger<ClaudeProvider> logger) : ILlmProvider
 {
-    private const string _modelName = "claude-sonnet-4-20250514";
+    private const string _modelName = "claude-sonnet-4-5";
     private const int _maxTokens = 1000;
 
     private readonly ISecretStore _secretStore = secretStore ?? throw new ArgumentNullException(nameof(secretStore));
