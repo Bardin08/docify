@@ -1,5 +1,6 @@
 ﻿using System.CommandLine;
 using Docify.CLI.Commands;
+using Docify.CLI.DependencyInjection;
 using Docify.CLI.Formatters;
 using Docify.Core.Analyzers;
 using Docify.Core.Interfaces;
@@ -24,6 +25,7 @@ try
         .AddSingleton<JsonReportFormatter>()
         .AddSingleton<MarkdownReportFormatter>()
         .AddSingleton<IReportFormatterFactory, ReportFormatterFactory>()
+        .AddLlmServices()
         .AddSingleton<AnalyzeCommand>()
         .AddSingleton(ConstructRootCommand)
         .BuildServiceProvider();

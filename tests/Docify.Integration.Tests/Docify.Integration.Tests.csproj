@@ -11,6 +11,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Docify.Core/Docify.Core.csproj" />
     <ProjectReference Include="../../src/Docify.CLI/Docify.CLI.csproj" />
+    <ProjectReference Include="../../src/Docify.LLM/Docify.LLM.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
