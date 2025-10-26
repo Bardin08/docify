@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Docify.Integration.Tests", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Docify.Performance.Tests", "tests\Docify.Performance.Tests\Docify.Performance.Tests.csproj", "{BDBF2B52-E6D5-46A6-8875-E7DE9341D80B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Docify.CLI.Tests", "tests\Docify.CLI.Tests\Docify.CLI.Tests.csproj", "{F247866A-732D-4A85-B082-9C6D2E23F0EF}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -87,6 +89,18 @@ Global
 		{BDBF2B52-E6D5-46A6-8875-E7DE9341D80B}.Release|x64.Build.0 = Release|Any CPU
 		{BDBF2B52-E6D5-46A6-8875-E7DE9341D80B}.Release|x86.ActiveCfg = Release|Any CPU
 		{BDBF2B52-E6D5-46A6-8875-E7DE9341D80B}.Release|x86.Build.0 = Release|Any CPU
+		{F247866A-732D-4A85-B082-9C6D2E23F0EF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F247866A-732D-4A85-B082-9C6D2E23F0EF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F247866A-732D-4A85-B082-9C6D2E23F0EF}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F247866A-732D-4A85-B082-9C6D2E23F0EF}.Debug|x64.Build.0 = Debug|Any CPU
+		{F247866A-732D-4A85-B082-9C6D2E23F0EF}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F247866A-732D-4A85-B082-9C6D2E23F0EF}.Debug|x86.Build.0 = Debug|Any CPU
+		{F247866A-732D-4A85-B082-9C6D2E23F0EF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F247866A-732D-4A85-B082-9C6D2E23F0EF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F247866A-732D-4A85-B082-9C6D2E23F0EF}.Release|x64.ActiveCfg = Release|Any CPU
+		{F247866A-732D-4A85-B082-9C6D2E23F0EF}.Release|x64.Build.0 = Release|Any CPU
+		{F247866A-732D-4A85-B082-9C6D2E23F0EF}.Release|x86.ActiveCfg = Release|Any CPU
+		{F247866A-732D-4A85-B082-9C6D2E23F0EF}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -97,5 +111,6 @@ Global
 		{CACF6121-1236-458F-91CB-21E56F444B91} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{748106C7-3423-4933-B174-E7DC80161DA7} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{BDBF2B52-E6D5-46A6-8875-E7DE9341D80B} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{F247866A-732D-4A85-B082-9C6D2E23F0EF} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

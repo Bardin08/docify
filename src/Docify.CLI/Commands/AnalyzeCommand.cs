@@ -1,4 +1,5 @@
 using System.CommandLine;
+using Docify.CLI.Formatters;
 using Docify.Core.Interfaces;
 using Microsoft.Extensions.Logging;
 
@@ -7,27 +8,38 @@ namespace Docify.CLI.Commands;
 public class AnalyzeCommand : Command
 {
     private readonly ICodeAnalyzer _codeAnalyzer;
+    private readonly IReportFormatterFactory _formatterFactory;
     private readonly ILogger<AnalyzeCommand> _logger;
 
-    public AnalyzeCommand(ICodeAnalyzer analyzer, ILogger<AnalyzeCommand> logger)
+    public AnalyzeCommand(
+        ICodeAnalyzer analyzer,
+        IReportFormatterFactory formatterFactory,
+        ILogger<AnalyzeCommand> logger)
         : base("analyze", "Analyze a .NET project or solution for documentation coverage")
     {
         _codeAnalyzer = analyzer;
+        _formatterFactory = formatterFactory;
         _logger = logger;
 
         var projectPathArgument = new Argument<string>(
             name: "project-path",
             description: "Path to .csproj or .sln file to analyze");
 
-        AddArgument(projectPathArgument);
+        var formatOption = new Option<string>(
+            name: "--format",
+            description: "Output format (text, json, markdown)",
+            getDefaultValue: () => "text");
 
-        this.SetHandler(async projectPath =>
+        AddArgument(projectPathArgument);
+        AddOption(formatOption);
+
+        this.SetHandler(async (projectPath, format) =>
         {
-            await CommandHandler(projectPath);
-        }, projectPathArgument);
+            await CommandHandler(projectPath, format);
+        }, projectPathArgument, formatOption);
     }
 
-    private async Task CommandHandler(string projectPath)
+    private async Task CommandHandler(string projectPath, string format)
     {
         try
         {
@@ -44,6 +56,15 @@ public class AnalyzeCommand : Command
                     _logger.LogWarning("{Diagnostic}", diagnostic);
                 }
             }
+
+            var formatter = _formatterFactory.GetFormatter(format);
+            var report = formatter.Format(result);
+            _logger.LogInformation("{Report}", report);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogError("{Message}", ex.Message);
+            Environment.ExitCode = 1;
         }
         catch (Exception ex)
         {

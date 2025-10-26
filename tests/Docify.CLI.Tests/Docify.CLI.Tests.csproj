@@ -2,16 +2,11 @@
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <LangVersion>12</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="../../src/Docify.Core/Docify.Core.csproj" />
-    <ProjectReference Include="../../src/Docify.CLI/Docify.CLI.csproj" />
-  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
@@ -19,6 +14,11 @@
     <PackageReference Include="Shouldly" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Docify.CLI\Docify.CLI.csproj" />
+    <ProjectReference Include="..\..\src\Docify.Core\Docify.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

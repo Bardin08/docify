@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Docify.CLI.Formatters;
 using Docify.Core.Analyzers;
 using Docify.Core.Interfaces;
 using Docify.Core.Models;
@@ -191,5 +193,105 @@ public class RoslynIntegrationTests
             ? Math.Round((decimal)documentedCount / result.PublicApis.Count * 100, 2)
             : 0m;
         result.DocumentationSummary.CoveragePercentage.ShouldBe(expectedCoverage);
+    }
+
+    [Fact]
+    public async Task FormatReport_TextFormat_ProducesValidOutput()
+    {
+        // Arrange
+        var mockLogger = new Mock<ILogger<RoslynAnalyzer>>();
+        var mockSymbolExtractorLogger = new Mock<ILogger<SymbolExtractor>>();
+        var mockDetectorLogger = new Mock<ILogger<DocumentationDetector>>();
+        var mockFormatterLogger = new Mock<ILogger<TextReportFormatter>>();
+        var documentationDetector = new DocumentationDetector(mockDetectorLogger.Object);
+        var symbolExtractor = new SymbolExtractor(mockSymbolExtractorLogger.Object, documentationDetector);
+        var analyzer = new RoslynAnalyzer(mockLogger.Object, symbolExtractor);
+        var formatter = new TextReportFormatter(mockFormatterLogger.Object);
+        var projectPath = Path.GetFullPath("../../../../samples/SimpleLibrary/SimpleLibrary.csproj");
+
+        // Skip test if sample project doesn't exist
+        if (!File.Exists(projectPath))
+        {
+            return;
+        }
+
+        // Act
+        var result = await analyzer.AnalyzeProject(projectPath);
+        var report = formatter.Format(result);
+
+        // Assert
+        report.ShouldNotBeNullOrWhiteSpace();
+        report.ShouldContain("Documentation Coverage Report:");
+        report.ShouldContain("Summary:");
+        report.ShouldContain("Total APIs:");
+        report.ShouldContain("Coverage:");
+    }
+
+    [Fact]
+    public async Task FormatReport_JsonFormat_ProducesValidJson()
+    {
+        // Arrange
+        var mockLogger = new Mock<ILogger<RoslynAnalyzer>>();
+        var mockSymbolExtractorLogger = new Mock<ILogger<SymbolExtractor>>();
+        var mockDetectorLogger = new Mock<ILogger<DocumentationDetector>>();
+        var mockFormatterLogger = new Mock<ILogger<JsonReportFormatter>>();
+        var documentationDetector = new DocumentationDetector(mockDetectorLogger.Object);
+        var symbolExtractor = new SymbolExtractor(mockSymbolExtractorLogger.Object, documentationDetector);
+        var analyzer = new RoslynAnalyzer(mockLogger.Object, symbolExtractor);
+        var formatter = new JsonReportFormatter(mockFormatterLogger.Object);
+        var projectPath = Path.GetFullPath("../../../../samples/SimpleLibrary/SimpleLibrary.csproj");
+
+        // Skip test if sample project doesn't exist
+        if (!File.Exists(projectPath))
+        {
+            return;
+        }
+
+        // Act
+        var result = await analyzer.AnalyzeProject(projectPath);
+        var report = formatter.Format(result);
+
+        // Assert
+        report.ShouldNotBeNullOrWhiteSpace();
+        var parsed = () => JsonDocument.Parse(report);
+        parsed.ShouldNotThrow();
+
+        var doc = JsonDocument.Parse(report);
+        var root = doc.RootElement;
+        root.TryGetProperty("projectName", out _).ShouldBeTrue();
+        root.TryGetProperty("totalApis", out _).ShouldBeTrue();
+        root.TryGetProperty("undocumentedCount", out _).ShouldBeTrue();
+        root.TryGetProperty("coveragePercentage", out _).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task FormatReport_MarkdownFormat_ProducesValidMarkdown()
+    {
+        // Arrange
+        var mockLogger = new Mock<ILogger<RoslynAnalyzer>>();
+        var mockSymbolExtractorLogger = new Mock<ILogger<SymbolExtractor>>();
+        var mockDetectorLogger = new Mock<ILogger<DocumentationDetector>>();
+        var mockFormatterLogger = new Mock<ILogger<MarkdownReportFormatter>>();
+        var documentationDetector = new DocumentationDetector(mockDetectorLogger.Object);
+        var symbolExtractor = new SymbolExtractor(mockSymbolExtractorLogger.Object, documentationDetector);
+        var analyzer = new RoslynAnalyzer(mockLogger.Object, symbolExtractor);
+        var formatter = new MarkdownReportFormatter(mockFormatterLogger.Object);
+        var projectPath = Path.GetFullPath("../../../../samples/SimpleLibrary/SimpleLibrary.csproj");
+
+        // Skip test if sample project doesn't exist
+        if (!File.Exists(projectPath))
+        {
+            return;
+        }
+
+        // Act
+        var result = await analyzer.AnalyzeProject(projectPath);
+        var report = formatter.Format(result);
+
+        // Assert
+        report.ShouldNotBeNullOrWhiteSpace();
+        report.ShouldContain("# Documentation Coverage Report:");
+        report.ShouldContain("## Summary");
+        report.ShouldContain("|"); // Table syntax
     }
 }

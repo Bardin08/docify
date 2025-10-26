@@ -19,6 +19,10 @@ try
         .AddSingleton<IDocumentationDetector, DocumentationDetector>()
         .AddSingleton<ISymbolExtractor, SymbolExtractor>()
         .AddSingleton<ICodeAnalyzer, RoslynAnalyzer>()
+        .AddSingleton<TextReportFormatter>()
+        .AddSingleton<JsonReportFormatter>()
+        .AddSingleton<MarkdownReportFormatter>()
+        .AddSingleton<IReportFormatterFactory, ReportFormatterFactory>()
         .AddSingleton<AnalyzeCommand>()
         .AddSingleton(ConstructRootCommand)
         .BuildServiceProvider();
