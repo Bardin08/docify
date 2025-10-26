@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Docify.Core.Tests", "tests\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Docify.Integration.Tests", "tests\Docify.Integration.Tests\Docify.Integration.Tests.csproj", "{748106C7-3423-4933-B174-E7DC80161DA7}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Docify.Performance.Tests", "tests\Docify.Performance.Tests\Docify.Performance.Tests.csproj", "{BDBF2B52-E6D5-46A6-8875-E7DE9341D80B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -73,6 +75,18 @@ Global
 		{748106C7-3423-4933-B174-E7DC80161DA7}.Release|x64.Build.0 = Release|Any CPU
 		{748106C7-3423-4933-B174-E7DC80161DA7}.Release|x86.ActiveCfg = Release|Any CPU
 		{748106C7-3423-4933-B174-E7DC80161DA7}.Release|x86.Build.0 = Release|Any CPU
+		{BDBF2B52-E6D5-46A6-8875-E7DE9341D80B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BDBF2B52-E6D5-46A6-8875-E7DE9341D80B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BDBF2B52-E6D5-46A6-8875-E7DE9341D80B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{BDBF2B52-E6D5-46A6-8875-E7DE9341D80B}.Debug|x64.Build.0 = Debug|Any CPU
+		{BDBF2B52-E6D5-46A6-8875-E7DE9341D80B}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{BDBF2B52-E6D5-46A6-8875-E7DE9341D80B}.Debug|x86.Build.0 = Debug|Any CPU
+		{BDBF2B52-E6D5-46A6-8875-E7DE9341D80B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BDBF2B52-E6D5-46A6-8875-E7DE9341D80B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BDBF2B52-E6D5-46A6-8875-E7DE9341D80B}.Release|x64.ActiveCfg = Release|Any CPU
+		{BDBF2B52-E6D5-46A6-8875-E7DE9341D80B}.Release|x64.Build.0 = Release|Any CPU
+		{BDBF2B52-E6D5-46A6-8875-E7DE9341D80B}.Release|x86.ActiveCfg = Release|Any CPU
+		{BDBF2B52-E6D5-46A6-8875-E7DE9341D80B}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -82,5 +96,6 @@ Global
 		{72207C7D-9DE9-466E-91BF-A1CCF476EAC9} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{CACF6121-1236-458F-91CB-21E56F444B91} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{748106C7-3423-4933-B174-E7DC80161DA7} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{BDBF2B52-E6D5-46A6-8875-E7DE9341D80B} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal
