@@ -5,6 +5,7 @@ using Docify.Core.Models;
 using Docify.LLM.ContextCollection;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
@@ -304,10 +305,12 @@ public class RoslynIntegrationTests
         var mockSymbolExtractorLogger = new Mock<ILogger<SymbolExtractor>>();
         var mockDetectorLogger = new Mock<ILogger<DocumentationDetector>>();
         var mockCollectorLogger = new Mock<ILogger<SignatureContextCollector>>();
+        var mockCallSiteCollectorLogger = new Mock<ILogger<CallSiteCollector>>();
         var documentationDetector = new DocumentationDetector(mockDetectorLogger.Object);
         var symbolExtractor = new SymbolExtractor(mockSymbolExtractorLogger.Object, documentationDetector);
         var analyzer = new RoslynAnalyzer(mockAnalyzerLogger.Object, symbolExtractor);
-        var collector = new SignatureContextCollector(mockCollectorLogger.Object);
+        var callSiteCollector = new CallSiteCollector(mockCallSiteCollectorLogger.Object);
+        var collector = new SignatureContextCollector(mockCollectorLogger.Object, callSiteCollector);
         var projectPath = Path.GetFullPath("../../../../samples/SimpleLibrary/SimpleLibrary.csproj");
 
         // Skip test if sample project doesn't exist
@@ -338,7 +341,9 @@ public class RoslynIntegrationTests
     {
         // Arrange - create in-memory compilation with generic method
         var mockCollectorLogger = new Mock<ILogger<SignatureContextCollector>>();
-        var collector = new SignatureContextCollector(mockCollectorLogger.Object);
+        var mockCallSiteCollectorLogger = new Mock<ILogger<CallSiteCollector>>();
+        var callSiteCollector = new CallSiteCollector(mockCallSiteCollectorLogger.Object);
+        var collector = new SignatureContextCollector(mockCollectorLogger.Object, callSiteCollector);
 
         var code = @"
             namespace TestNamespace
@@ -395,7 +400,9 @@ public class RoslynIntegrationTests
     {
         // Arrange - create in-memory compilation with inheritance
         var mockCollectorLogger = new Mock<ILogger<SignatureContextCollector>>();
-        var collector = new SignatureContextCollector(mockCollectorLogger.Object);
+        var mockCallSiteCollectorLogger = new Mock<ILogger<CallSiteCollector>>();
+        var callSiteCollector = new CallSiteCollector(mockCallSiteCollectorLogger.Object);
+        var collector = new SignatureContextCollector(mockCollectorLogger.Object, callSiteCollector);
 
         var code = @"
             namespace TestNamespace
@@ -448,5 +455,54 @@ public class RoslynIntegrationTests
         // Assert
         context.InheritanceHierarchy.ShouldContain(h => h.Contains("BaseClass"));
         context.InheritanceHierarchy.ShouldContain(h => h.Contains("ITestInterface"));
+    }
+
+    [Fact]
+    public async Task CallSiteCollector_WithRealProject_FindsCallSites()
+    {
+        // Arrange
+        var mockAnalyzerLogger = new Mock<ILogger<RoslynAnalyzer>>();
+        var mockSymbolExtractorLogger = new Mock<ILogger<SymbolExtractor>>();
+        var mockDetectorLogger = new Mock<ILogger<DocumentationDetector>>();
+        var mockCollectorLogger = new Mock<ILogger<SignatureContextCollector>>();
+        var mockCallSiteCollectorLogger = new Mock<ILogger<CallSiteCollector>>();
+
+        var documentationDetector = new DocumentationDetector(mockDetectorLogger.Object);
+        var symbolExtractor = new SymbolExtractor(mockSymbolExtractorLogger.Object, documentationDetector);
+        var analyzer = new RoslynAnalyzer(mockAnalyzerLogger.Object, symbolExtractor);
+        var callSiteCollector = new CallSiteCollector(mockCallSiteCollectorLogger.Object);
+        var collector = new SignatureContextCollector(mockCollectorLogger.Object, callSiteCollector);
+
+        var projectPath = Path.GetFullPath("../../../../samples/SimpleLibrary/SimpleLibrary.csproj");
+
+        // Skip test if sample project doesn't exist
+        if (!File.Exists(projectPath))
+        {
+            return;
+        }
+
+        // Act - analyze project and find Calculator.Add method
+        var result = await analyzer.AnalyzeProject(projectPath);
+        var addMethod = result.PublicApis.FirstOrDefault(api =>
+            api.SymbolType == SymbolType.Method &&
+            api.Signature.Contains("Add") &&
+            api.Signature.Contains("double"));
+
+        addMethod.ShouldNotBeNull();
+
+        // Load compilation
+        var workspace = MSBuildWorkspace.Create();
+        var project = await workspace.OpenProjectAsync(projectPath);
+        var compilation = await project.GetCompilationAsync();
+
+        compilation.ShouldNotBeNull();
+
+        // Collect context with call sites
+        var context = await collector.CollectContext(addMethod, compilation);
+
+        // Assert - Calculator.Add should have call sites from CalculatorUsage
+        context.ShouldNotBeNull();
+        context.CallSites.ShouldNotBeEmpty();
+        context.CallSites.ShouldContain(cs => cs.CallExpression.Contains("Add"));
     }
 }

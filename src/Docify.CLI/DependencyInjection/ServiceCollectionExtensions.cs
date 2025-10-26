@@ -14,6 +14,7 @@ public static class ServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddLlmServices(this IServiceCollection services)
     {
+        services.AddSingleton<ICallSiteCollector, CallSiteCollector>();
         services.AddSingleton<IContextCollector, SignatureContextCollector>();
         return services;
     }

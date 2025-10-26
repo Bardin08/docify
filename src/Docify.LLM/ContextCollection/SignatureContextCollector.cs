@@ -11,7 +11,9 @@ namespace Docify.LLM.ContextCollection;
 /// <summary>
 /// Collects signature and type information for API symbols using Roslyn semantic analysis.
 /// </summary>
-public class SignatureContextCollector(ILogger<SignatureContextCollector> logger) : IContextCollector
+public class SignatureContextCollector(
+    ILogger<SignatureContextCollector> logger,
+    ICallSiteCollector callSiteCollector) : IContextCollector
 {
     /// <inheritdoc/>
     public async Task<ApiContext> CollectContext(
@@ -22,7 +24,7 @@ public class SignatureContextCollector(ILogger<SignatureContextCollector> logger
         ArgumentNullException.ThrowIfNull(symbol);
         ArgumentNullException.ThrowIfNull(compilation);
 
-        var roslynSymbol = await GetRoslynSymbol(symbol, compilation, cancellationToken).ConfigureAwait(false);
+        var roslynSymbol = await GetRoslynSymbol(symbol, compilation, cancellationToken);
 
         if (roslynSymbol == null)
             throw new InvalidOperationException($"Could not find Roslyn symbol for {symbol.FullyQualifiedName}");
@@ -32,7 +34,11 @@ public class SignatureContextCollector(ILogger<SignatureContextCollector> logger
         var inheritanceHierarchy = ExtractInheritanceHierarchy(roslynSymbol);
         var relatedTypes = ExtractRelatedTypes(roslynSymbol, parameterTypes, returnType);
         var xmlDocComments = ExtractXmlDocumentation(roslynSymbol);
-        var tokenEstimate = EstimateTokenCount(parameterTypes, returnType, inheritanceHierarchy, xmlDocComments);
+
+        // Collect call sites (usage examples)
+        var callSites = await callSiteCollector.CollectCallSites(symbol, compilation, cancellationToken: cancellationToken);
+
+        var tokenEstimate = EstimateTokenCount(parameterTypes, returnType, inheritanceHierarchy, xmlDocComments, callSites);
 
         logger.LogDebug("Collected signature context for {ApiName}", symbol.FullyQualifiedName);
 
@@ -44,7 +50,8 @@ public class SignatureContextCollector(ILogger<SignatureContextCollector> logger
             InheritanceHierarchy = inheritanceHierarchy,
             RelatedTypes = relatedTypes,
             XmlDocComments = xmlDocComments,
-            TokenEstimate = tokenEstimate
+            TokenEstimate = tokenEstimate,
+            CallSites = callSites
         };
     }
 
@@ -56,7 +63,7 @@ public class SignatureContextCollector(ILogger<SignatureContextCollector> logger
         foreach (var syntaxTree in compilation.SyntaxTrees)
         {
             var semanticModel = compilation.GetSemanticModel(syntaxTree);
-            var root = await syntaxTree.GetRootAsync(cancellationToken).ConfigureAwait(false);
+            var root = await syntaxTree.GetRootAsync(cancellationToken);
 
             var nodes = root.DescendantNodes();
             foreach (var node in nodes)
@@ -257,7 +264,7 @@ public class SignatureContextCollector(ILogger<SignatureContextCollector> logger
         return true;
     }
 
-    private int EstimateTokenCount(List<string> parameters, string? returnType, List<string> hierarchy, string? xmlDocs)
+    private int EstimateTokenCount(List<string> parameters, string? returnType, List<string> hierarchy, string? xmlDocs, List<CallSiteInfo> callSites)
     {
         // Simple heuristic: character count / 4 (rough approximation for English text tokens)
         var charCount = 0;
@@ -266,6 +273,15 @@ public class SignatureContextCollector(ILogger<SignatureContextCollector> logger
         charCount += returnType?.Length ?? 0;
         charCount += hierarchy.Sum(h => h.Length);
         charCount += xmlDocs?.Length ?? 0;
+
+        // Include call site context in token estimate
+        foreach (var callSite in callSites)
+        {
+            charCount += callSite.FilePath.Length;
+            charCount += callSite.CallExpression.Length;
+            charCount += callSite.ContextBefore.Sum(line => line.Length);
+            charCount += callSite.ContextAfter.Sum(line => line.Length);
+        }
 
         return charCount / 4;
     }
@@ -329,12 +345,41 @@ public class SignatureContextCollector(ILogger<SignatureContextCollector> logger
             sb.AppendLine();
         }
 
-        if (string.IsNullOrWhiteSpace(context.XmlDocComments))
-            return sb.ToString().TrimEnd();
+        if (!string.IsNullOrWhiteSpace(context.XmlDocComments))
+        {
+            sb.AppendLine("Related Documentation:");
+            foreach (var line in context.XmlDocComments.Split('\n'))
+                sb.AppendLine($"  > {line.TrimEnd()}");
 
-        sb.AppendLine("Related Documentation:");
-        foreach (var line in context.XmlDocComments.Split('\n'))
-            sb.AppendLine($"  > {line.TrimEnd()}");
+            sb.AppendLine();
+        }
+
+        // Add usage examples
+        if (context.CallSites.Count > 0)
+        {
+            sb.AppendLine("Usage Examples:");
+            foreach (var callSite in context.CallSites)
+            {
+                sb.AppendLine($"  File: {callSite.FilePath}:{callSite.LineNumber}");
+
+                // Context before
+                foreach (var line in callSite.ContextBefore)
+                {
+                    sb.AppendLine($"  > {line}");
+                }
+
+                // Call expression (highlight it)
+                sb.AppendLine($"  > {callSite.CallExpression}  // <-- call site");
+
+                // Context after
+                foreach (var line in callSite.ContextAfter)
+                {
+                    sb.AppendLine($"  > {line}");
+                }
+
+                sb.AppendLine();
+            }
+        }
 
         return sb.ToString().TrimEnd();
     }

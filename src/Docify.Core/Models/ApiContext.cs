@@ -39,4 +39,40 @@ public record ApiContext
     /// Estimated token count for LLM context.
     /// </summary>
     public required int TokenEstimate { get; init; }
+
+    /// <summary>
+    /// Usage examples showing how the API is called in the codebase.
+    /// </summary>
+    public required List<CallSiteInfo> CallSites { get; init; }
+}
+
+/// <summary>
+/// Represents a single usage example (call site) of an API within the codebase.
+/// </summary>
+public record CallSiteInfo
+{
+    /// <summary>
+    /// Absolute path to the file containing the call site.
+    /// </summary>
+    public required string FilePath { get; init; }
+
+    /// <summary>
+    /// Line number where the call expression occurs.
+    /// </summary>
+    public required int LineNumber { get; init; }
+
+    /// <summary>
+    /// Lines of code before the call expression for context.
+    /// </summary>
+    public required List<string> ContextBefore { get; init; }
+
+    /// <summary>
+    /// The actual call expression line.
+    /// </summary>
+    public required string CallExpression { get; init; }
+
+    /// <summary>
+    /// Lines of code after the call expression for context.
+    /// </summary>
+    public required List<string> ContextAfter { get; init; }
 }
