@@ -3,13 +3,22 @@ using Docify.Core.Models;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using Shouldly;
 
 namespace Docify.Core.Tests.Analyzers;
 
 public class SymbolExtractorTests
 {
-    private readonly SymbolExtractor _extractor = new(NullLogger<SymbolExtractor>.Instance);
+    private readonly SymbolExtractor _extractor;
+
+    public SymbolExtractorTests()
+    {
+        var mockDetector = new Mock<Docify.Core.Interfaces.IDocumentationDetector>();
+        mockDetector.Setup(d => d.DetectDocumentationStatus(It.IsAny<Microsoft.CodeAnalysis.ISymbol>()))
+            .Returns(DocumentationStatus.Undocumented);
+        _extractor = new SymbolExtractor(NullLogger<SymbolExtractor>.Instance, mockDetector.Object);
+    }
 
     [Fact]
     public async Task ExtractPublicSymbols_NullCompilation_ThrowsArgumentNullException()

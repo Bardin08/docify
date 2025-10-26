@@ -26,7 +26,8 @@ public class AnalysisBenchmarks
                 _projectPath);
         }
 
-        var symbolExtractor = new SymbolExtractor(NullLogger<SymbolExtractor>.Instance);
+        var documentationDetector = new DocumentationDetector(NullLogger<DocumentationDetector>.Instance);
+        var symbolExtractor = new SymbolExtractor(NullLogger<SymbolExtractor>.Instance, documentationDetector);
         _analyzer = new RoslynAnalyzer(NullLogger<RoslynAnalyzer>.Instance, symbolExtractor);
     }
 

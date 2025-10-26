@@ -12,6 +12,9 @@ namespace Docify.Core.Analyzers;
 /// </summary>
 public class RoslynAnalyzer(ILogger<RoslynAnalyzer> logger, ISymbolExtractor symbolExtractor) : ICodeAnalyzer
 {
+    private readonly ILogger<RoslynAnalyzer> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly ISymbolExtractor _symbolExtractor = symbolExtractor ?? throw new ArgumentNullException(nameof(symbolExtractor));
+
     /// <inheritdoc />
     public async Task<AnalysisResult> AnalyzeProject(string projectPath)
     {
@@ -28,21 +31,21 @@ public class RoslynAnalyzer(ILogger<RoslynAnalyzer> logger, ISymbolExtractor sym
             using var workspace = MSBuildWorkspace.Create();
             workspace.WorkspaceFailed += (_, args) =>
             {
-                logger.LogWarning("Workspace diagnostic: {Diagnostic}", args.Diagnostic.Message);
+                _logger.LogWarning("Workspace diagnostic: {Diagnostic}", args.Diagnostic.Message);
             };
 
-            logger.LogInformation("Loading project from {ProjectPath}", projectPath);
+            _logger.LogInformation("Loading project from {ProjectPath}", projectPath);
 
             Compilation? compilation;
             var extension = Path.GetExtension(projectPath);
 
             if (extension.Equals(".sln", StringComparison.OrdinalIgnoreCase))
             {
-                logger.LogWarning(
+                _logger.LogWarning(
                     "Solution files are only partially supported. Only the first project will be analyzed.");
 
                 var solution = await workspace.OpenSolutionAsync(projectPath);
-                logger.LogInformation("Loaded solution with {ProjectCount} projects", solution.ProjectIds.Count);
+                _logger.LogInformation("Loaded solution with {ProjectCount} projects", solution.ProjectIds.Count);
 
                 // For multi-project solutions, we'll analyze the first project for now
                 // Future stories will handle multi-project scenarios
@@ -54,7 +57,7 @@ public class RoslynAnalyzer(ILogger<RoslynAnalyzer> logger, ISymbolExtractor sym
             else
             {
                 var project = await workspace.OpenProjectAsync(projectPath);
-                logger.LogInformation("Loaded project {ProjectName}", project.Name);
+                _logger.LogInformation("Loaded project {ProjectName}", project.Name);
 
                 compilation = await project.GetCompilationAsync();
             }
@@ -77,11 +80,11 @@ public class RoslynAnalyzer(ILogger<RoslynAnalyzer> logger, ISymbolExtractor sym
             var totalDocuments = syntaxTrees.Count;
 
             // Extract public symbols
-            var publicApis = await symbolExtractor.ExtractPublicSymbols(compilation);
+            var publicApis = await _symbolExtractor.ExtractPublicSymbols(compilation);
 
             logger.LogInformation("Analysis complete: {TotalDocuments} documents found", totalDocuments);
 
-            return new AnalysisResult
+            var result = new AnalysisResult
             {
                 ProjectPath = projectPath,
                 TotalDocuments = totalDocuments,
@@ -91,6 +94,9 @@ public class RoslynAnalyzer(ILogger<RoslynAnalyzer> logger, ISymbolExtractor sym
                 DiagnosticMessages = diagnosticMessages,
                 PublicApis = publicApis
             };
+
+            // Generate documentation summary
+            return result.WithDocumentationSummary();
         }
         catch (Exception ex) when (ex is not ProjectLoadException)
         {

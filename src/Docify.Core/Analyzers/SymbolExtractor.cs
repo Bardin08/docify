@@ -8,7 +8,8 @@ namespace Docify.Core.Analyzers;
 /// <summary>
 /// Extracts public and protected API symbols from Roslyn compilations.
 /// </summary>
-public class SymbolExtractor(ILogger<SymbolExtractor> logger) : ISymbolExtractor
+public class SymbolExtractor(ILogger<SymbolExtractor> logger, IDocumentationDetector documentationDetector)
+    : ISymbolExtractor
 {
     /// <summary>
     /// Extracts all public and protected API symbols from the specified compilation.
@@ -30,7 +31,7 @@ public class SymbolExtractor(ILogger<SymbolExtractor> logger) : ISymbolExtractor
                 var root = syntaxTree.GetRoot();
 
                 // Walk the syntax tree and extract symbols
-                var visitor = new SymbolVisitor(semanticModel, symbols);
+                var visitor = new SymbolVisitor(semanticModel, symbols, documentationDetector);
                 visitor.Visit(root);
             }
         });
@@ -43,7 +44,10 @@ public class SymbolExtractor(ILogger<SymbolExtractor> logger) : ISymbolExtractor
     /// <summary>
     /// Syntax walker that discovers public and protected symbols.
     /// </summary>
-    private class SymbolVisitor(SemanticModel semanticModel, List<ApiSymbol> symbols)
+    private class SymbolVisitor(
+        SemanticModel semanticModel,
+        List<ApiSymbol> symbols,
+        IDocumentationDetector documentationDetector)
         : Microsoft.CodeAnalysis.CSharp.CSharpSyntaxWalker
     {
         public override void VisitClassDeclaration(Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax node)
@@ -139,7 +143,7 @@ public class SymbolExtractor(ILogger<SymbolExtractor> logger) : ISymbolExtractor
                 or Accessibility.ProtectedOrInternal;
         }
 
-        private static ApiSymbol CreateApiSymbol(SyntaxNode node, ISymbol symbol, SymbolType symbolType)
+        private ApiSymbol CreateApiSymbol(SyntaxNode node, ISymbol symbol, SymbolType symbolType)
         {
             var location = node.GetLocation();
             var lineSpan = location.GetLineSpan();
@@ -151,6 +155,9 @@ public class SymbolExtractor(ILogger<SymbolExtractor> logger) : ISymbolExtractor
             var accessModifier = symbol.DeclaredAccessibility.ToString();
             var isStatic = symbol.IsStatic;
 
+            var documentationStatus = documentationDetector.DetectDocumentationStatus(symbol);
+            var hasDocumentation = documentationStatus != DocumentationStatus.Undocumented;
+
             return new ApiSymbol
             {
                 Id = Guid.NewGuid().ToString(),
@@ -160,7 +167,9 @@ public class SymbolExtractor(ILogger<SymbolExtractor> logger) : ISymbolExtractor
                 LineNumber = lineNumber,
                 Signature = signature,
                 AccessModifier = accessModifier,
-                IsStatic = isStatic
+                IsStatic = isStatic,
+                HasDocumentation = hasDocumentation,
+                DocumentationStatus = documentationStatus
             };
         }
     }

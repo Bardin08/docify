@@ -41,4 +41,19 @@ public record AnalysisResult
     /// Gets the list of discovered public API symbols.
     /// </summary>
     public required IReadOnlyList<ApiSymbol> PublicApis { get; init; }
+
+    /// <summary>
+    /// Gets the documentation coverage summary for the analyzed APIs.
+    /// </summary>
+    public DocumentationSummary? DocumentationSummary { get; init; }
+
+    /// <summary>
+    /// Generates documentation summary from the PublicApis list.
+    /// </summary>
+    /// <returns>A new AnalysisResult with the DocumentationSummary populated.</returns>
+    public AnalysisResult WithDocumentationSummary()
+    {
+        var summary = DocumentationSummary.Calculate(PublicApis);
+        return this with { DocumentationSummary = summary };
+    }
 }

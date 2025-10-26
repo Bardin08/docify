@@ -44,6 +44,42 @@ public record ApiSymbol
     /// Indicates whether the symbol is static.
     /// </summary>
     public required bool IsStatic { get; init; }
+
+    /// <summary>
+    /// Indicates whether the symbol has any XML documentation.
+    /// </summary>
+    public required bool HasDocumentation { get; init; }
+
+    /// <summary>
+    /// The documentation status of the symbol (Undocumented, PartiallyDocumented, Documented, or Stale).
+    /// </summary>
+    public required DocumentationStatus DocumentationStatus { get; init; }
+}
+
+/// <summary>
+/// Status of XML documentation for an API symbol.
+/// </summary>
+public enum DocumentationStatus
+{
+    /// <summary>
+    /// No XML documentation present.
+    /// </summary>
+    Undocumented,
+
+    /// <summary>
+    /// Has summary but missing required param/returns tags.
+    /// </summary>
+    PartiallyDocumented,
+
+    /// <summary>
+    /// Fully documented with all required tags.
+    /// </summary>
+    Documented,
+
+    /// <summary>
+    /// Documentation exists but is out of date (for future staleness detection).
+    /// </summary>
+    Stale
 }
 
 /// <summary>

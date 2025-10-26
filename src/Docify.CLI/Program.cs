@@ -16,6 +16,7 @@ try
     // Build service provider
     await using var serviceProvider = new ServiceCollection()
         .AddLogging(builder => builder.AddSerilog(dispose: true))
+        .AddSingleton<IDocumentationDetector, DocumentationDetector>()
         .AddSingleton<ISymbolExtractor, SymbolExtractor>()
         .AddSingleton<ICodeAnalyzer, RoslynAnalyzer>()
         .AddSingleton<AnalyzeCommand>()
