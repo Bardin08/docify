@@ -15,11 +15,11 @@ public class JsonReportFormatter(ILogger<JsonReportFormatter> logger) : ReportFo
     };
 
     /// <inheritdoc/>
-    public string Format(AnalysisResult result)
+    public string Format(AnalysisResult result, bool includeContext = false)
     {
         ArgumentNullException.ThrowIfNull(result);
 
-        logger.LogDebug("Generated JSON report for {ProjectPath}", result.ProjectPath);
+        logger.LogDebug("Generated JSON report for {ProjectPath} (includeContext: {IncludeContext})", result.ProjectPath, includeContext);
 
         var projectName = Path.GetFileNameWithoutExtension(result.ProjectPath);
         var undocumentedApis = result.PublicApis
@@ -30,7 +30,8 @@ public class JsonReportFormatter(ILogger<JsonReportFormatter> logger) : ReportFo
                 Namespace = GetNamespace(api.FullyQualifiedName),
                 Signature = api.Signature,
                 FilePath = api.FilePath,
-                LineNumber = api.LineNumber
+                LineNumber = api.LineNumber,
+                Context = includeContext ? api.Context : null
             })
             .ToList();
 
@@ -107,4 +108,9 @@ public record UndocumentedApiDto
     /// Gets the line number where the API is declared.
     /// </summary>
     public required int LineNumber { get; init; }
+
+    /// <summary>
+    /// Gets the LLM context for the API (only included when requested).
+    /// </summary>
+    public ApiContext? Context { get; init; }
 }

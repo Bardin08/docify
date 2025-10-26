@@ -54,6 +54,11 @@ public record ApiSymbol
     /// The documentation status of the symbol (Undocumented, PartiallyDocumented, Documented, or Stale).
     /// </summary>
     public required DocumentationStatus DocumentationStatus { get; init; }
+
+    /// <summary>
+    /// Contextual information for LLM documentation generation (nullable until collected).
+    /// </summary>
+    public ApiContext? Context { get; set; }
 }
 
 /// <summary>

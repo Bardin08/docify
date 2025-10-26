@@ -10,11 +10,11 @@ namespace Docify.CLI.Formatters;
 public class MarkdownReportFormatter(ILogger<MarkdownReportFormatter> logger) : ReportFormatterBase, IReportFormatter
 {
     /// <inheritdoc/>
-    public string Format(AnalysisResult result)
+    public string Format(AnalysisResult result, bool includeContext = false)
     {
         ArgumentNullException.ThrowIfNull(result);
 
-        logger.LogDebug("Generated Markdown report for {ProjectPath}", result.ProjectPath);
+        logger.LogDebug("Generated Markdown report for {ProjectPath} (includeContext: {IncludeContext})", result.ProjectPath, includeContext);
 
         var sb = new StringBuilder();
         var projectName = Path.GetFileNameWithoutExtension(result.ProjectPath);
@@ -55,9 +55,17 @@ public class MarkdownReportFormatter(ILogger<MarkdownReportFormatter> logger) : 
         sb.AppendLine($"## Undocumented APIs ({undocumentedApis.Count})");
         sb.AppendLine();
 
-        // Table header
-        sb.AppendLine("| Namespace | Type | Member | Signature | Location |");
-        sb.AppendLine("|-----------|------|--------|-----------|----------|");
+        // Table header (adjust based on includeContext)
+        if (includeContext)
+        {
+            sb.AppendLine("| Namespace | Type | Member | Signature | Location | Context Summary |");
+            sb.AppendLine("|-----------|------|--------|-----------|----------|-----------------|");
+        }
+        else
+        {
+            sb.AppendLine("| Namespace | Type | Member | Signature | Location |");
+            sb.AppendLine("|-----------|------|--------|-----------|----------|");
+        }
 
         // Table rows
         foreach (var api in undocumentedApis)
@@ -68,7 +76,22 @@ public class MarkdownReportFormatter(ILogger<MarkdownReportFormatter> logger) : 
             var signature = api.Signature.Replace("|", "\\|"); // Escape pipe chars
             var location = $"{api.FilePath}:{api.LineNumber}";
 
-            sb.AppendLine($"| {ns} | {type} | {member} | {signature} | {location} |");
+            if (includeContext && api.Context != null)
+            {
+                var contextSummary = $"Body: {(string.IsNullOrWhiteSpace(api.Context.ImplementationBody) ? "N/A" : $"{api.Context.ImplementationBody.Length}ch")}, " +
+                                     $"Called: {api.Context.CalledMethodsDocumentation.Count}, " +
+                                     $"Sites: {api.Context.CallSites.Count}, " +
+                                     $"Tokens: {api.Context.TokenEstimate}";
+                sb.AppendLine($"| {ns} | {type} | {member} | {signature} | {location} | {contextSummary} |");
+            }
+            else if (includeContext)
+            {
+                sb.AppendLine($"| {ns} | {type} | {member} | {signature} | {location} | No context |");
+            }
+            else
+            {
+                sb.AppendLine($"| {ns} | {type} | {member} | {signature} | {location} |");
+            }
         }
 
         return sb.ToString();

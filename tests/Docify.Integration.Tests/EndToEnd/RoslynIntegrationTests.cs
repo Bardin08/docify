@@ -1,12 +1,14 @@
 using System.Text.Json;
 using Docify.CLI.Formatters;
 using Docify.Core.Analyzers;
-using Docify.Core.Interfaces;
 using Docify.Core.Models;
+using Docify.LLM.ContextCollection;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
-using Xunit;
 
 namespace Docify.Integration.Tests.EndToEnd;
 
@@ -107,13 +109,13 @@ public class RoslynIntegrationTests
 
         // Verify we have a Calculator class
         var calculatorClass = result.PublicApis.FirstOrDefault(api =>
-            api.SymbolType == Docify.Core.Models.SymbolType.Class &&
+            api.SymbolType == SymbolType.Class &&
             api.FullyQualifiedName.Contains("Calculator"));
         calculatorClass.ShouldNotBeNull();
 
         // Verify we have Add method
         var addMethod = result.PublicApis.FirstOrDefault(api =>
-            api.SymbolType == Docify.Core.Models.SymbolType.Method &&
+            api.SymbolType == SymbolType.Method &&
             api.Signature.Contains("Add"));
         addMethod.ShouldNotBeNull();
 
@@ -293,5 +295,214 @@ public class RoslynIntegrationTests
         report.ShouldContain("# Documentation Coverage Report:");
         report.ShouldContain("## Summary");
         report.ShouldContain("|"); // Table syntax
+    }
+
+    [Fact]
+    public async Task CollectContext_WithRealProject_ExtractsMethodSignature()
+    {
+        // Arrange
+        var mockAnalyzerLogger = new Mock<ILogger<RoslynAnalyzer>>();
+        var mockSymbolExtractorLogger = new Mock<ILogger<SymbolExtractor>>();
+        var mockDetectorLogger = new Mock<ILogger<DocumentationDetector>>();
+        var mockCollectorLogger = new Mock<ILogger<SignatureContextCollector>>();
+        var mockCallSiteCollectorLogger = new Mock<ILogger<CallSiteCollector>>();
+        var documentationDetector = new DocumentationDetector(mockDetectorLogger.Object);
+        var symbolExtractor = new SymbolExtractor(mockSymbolExtractorLogger.Object, documentationDetector);
+        var analyzer = new RoslynAnalyzer(mockAnalyzerLogger.Object, symbolExtractor);
+        var callSiteCollector = new CallSiteCollector(mockCallSiteCollectorLogger.Object);
+        var collector = new SignatureContextCollector(mockCollectorLogger.Object, callSiteCollector);
+        var projectPath = Path.GetFullPath("../../../../samples/SimpleLibrary/SimpleLibrary.csproj");
+
+        // Skip test if sample project doesn't exist
+        if (!File.Exists(projectPath))
+        {
+            return;
+        }
+
+        // Act
+        var result = await analyzer.AnalyzeProject(projectPath);
+        var addMethod = result.PublicApis.FirstOrDefault(api =>
+            api.SymbolType == SymbolType.Method &&
+            api.Signature.Contains("Add"));
+
+        addMethod.ShouldNotBeNull();
+
+        var context = await collector.CollectContext(addMethod, result.Compilation);
+
+        // Assert
+        context.ShouldNotBeNull();
+        context.ApiSymbolId.ShouldBe(addMethod.Id);
+        context.ParameterTypes.ShouldNotBeEmpty();
+        context.ReturnType.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task CollectContext_WithGenericMethod_CapturesTypeParameters()
+    {
+        // Arrange - create in-memory compilation with generic method
+        var mockCollectorLogger = new Mock<ILogger<SignatureContextCollector>>();
+        var mockCallSiteCollectorLogger = new Mock<ILogger<CallSiteCollector>>();
+        var callSiteCollector = new CallSiteCollector(mockCallSiteCollectorLogger.Object);
+        var collector = new SignatureContextCollector(mockCollectorLogger.Object, callSiteCollector);
+
+        var code = @"
+            namespace TestNamespace
+            {
+                public class GenericClass
+                {
+                    public T GenericMethod<T>(T value) where T : class => value;
+                }
+            }";
+
+        var syntaxTree = CSharpSyntaxTree.ParseText(code);
+        var compilation = CSharpCompilation.Create(
+            "TestAssembly",
+            [syntaxTree],
+            [
+                MetadataReference.CreateFromFile(typeof(object).Assembly.Location)
+            ]);
+
+        var semanticModel = compilation.GetSemanticModel(syntaxTree);
+        var root = await syntaxTree.GetRootAsync();
+        var methodSymbol = root.DescendantNodes()
+            .Select(node => semanticModel.GetDeclaredSymbol(node))
+            .OfType<IMethodSymbol>()
+            .FirstOrDefault(m => m.Name == "GenericMethod");
+
+        methodSymbol.ShouldNotBeNull();
+
+        var fullyQualifiedName = methodSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
+            .WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted));
+
+        var apiSymbol = new ApiSymbol
+        {
+            Id = Guid.NewGuid().ToString(),
+            SymbolType = SymbolType.Method,
+            FullyQualifiedName = fullyQualifiedName,
+            FilePath = "test.cs",
+            LineNumber = 5,
+            Signature = methodSymbol.ToDisplayString(),
+            AccessModifier = "public",
+            IsStatic = false,
+            HasDocumentation = false,
+            DocumentationStatus = DocumentationStatus.Undocumented
+        };
+
+        // Act
+        var context = await collector.CollectContext(apiSymbol, compilation);
+
+        // Assert
+        context.ParameterTypes.ShouldContain(p => p.Contains("Type parameter") && p.Contains("class"));
+    }
+
+    [Fact]
+    public async Task CollectContext_WithInheritance_CapturesBaseTypeAndInterfaces()
+    {
+        // Arrange - create in-memory compilation with inheritance
+        var mockCollectorLogger = new Mock<ILogger<SignatureContextCollector>>();
+        var mockCallSiteCollectorLogger = new Mock<ILogger<CallSiteCollector>>();
+        var callSiteCollector = new CallSiteCollector(mockCallSiteCollectorLogger.Object);
+        var collector = new SignatureContextCollector(mockCollectorLogger.Object, callSiteCollector);
+
+        var code = @"
+            namespace TestNamespace
+            {
+                public interface ITestInterface { }
+                public class BaseClass { }
+                public class DerivedClass : BaseClass, ITestInterface
+                {
+                    public void TestMethod() { }
+                }
+            }";
+
+        var syntaxTree = CSharpSyntaxTree.ParseText(code);
+        var compilation = CSharpCompilation.Create(
+            "TestAssembly",
+            [syntaxTree],
+            [
+                MetadataReference.CreateFromFile(typeof(object).Assembly.Location)
+            ]);
+
+        var semanticModel = compilation.GetSemanticModel(syntaxTree);
+        var root = await syntaxTree.GetRootAsync();
+        var methodSymbol = root.DescendantNodes()
+            .Select(node => semanticModel.GetDeclaredSymbol(node))
+            .OfType<IMethodSymbol>()
+            .FirstOrDefault(m => m.Name == "TestMethod");
+
+        methodSymbol.ShouldNotBeNull();
+
+        var fullyQualifiedName = methodSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
+            .WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted));
+
+        var apiSymbol = new ApiSymbol
+        {
+            Id = Guid.NewGuid().ToString(),
+            SymbolType = SymbolType.Method,
+            FullyQualifiedName = fullyQualifiedName,
+            FilePath = "test.cs",
+            LineNumber = 6,
+            Signature = methodSymbol.ToDisplayString(),
+            AccessModifier = "public",
+            IsStatic = false,
+            HasDocumentation = false,
+            DocumentationStatus = DocumentationStatus.Undocumented
+        };
+
+        // Act
+        var context = await collector.CollectContext(apiSymbol, compilation);
+
+        // Assert
+        context.InheritanceHierarchy.ShouldContain(h => h.Contains("BaseClass"));
+        context.InheritanceHierarchy.ShouldContain(h => h.Contains("ITestInterface"));
+    }
+
+    [Fact]
+    public async Task CallSiteCollector_WithRealProject_FindsCallSites()
+    {
+        // Arrange
+        var mockAnalyzerLogger = new Mock<ILogger<RoslynAnalyzer>>();
+        var mockSymbolExtractorLogger = new Mock<ILogger<SymbolExtractor>>();
+        var mockDetectorLogger = new Mock<ILogger<DocumentationDetector>>();
+        var mockCollectorLogger = new Mock<ILogger<SignatureContextCollector>>();
+        var mockCallSiteCollectorLogger = new Mock<ILogger<CallSiteCollector>>();
+
+        var documentationDetector = new DocumentationDetector(mockDetectorLogger.Object);
+        var symbolExtractor = new SymbolExtractor(mockSymbolExtractorLogger.Object, documentationDetector);
+        var analyzer = new RoslynAnalyzer(mockAnalyzerLogger.Object, symbolExtractor);
+        var callSiteCollector = new CallSiteCollector(mockCallSiteCollectorLogger.Object);
+        var collector = new SignatureContextCollector(mockCollectorLogger.Object, callSiteCollector);
+
+        var projectPath = Path.GetFullPath("../../../../samples/SimpleLibrary/SimpleLibrary.csproj");
+
+        // Skip test if sample project doesn't exist
+        if (!File.Exists(projectPath))
+        {
+            return;
+        }
+
+        // Act - analyze project and find Calculator.Add method
+        var result = await analyzer.AnalyzeProject(projectPath);
+        var addMethod = result.PublicApis.FirstOrDefault(api =>
+            api.SymbolType == SymbolType.Method &&
+            api.Signature.Contains("Add") &&
+            api.Signature.Contains("double"));
+
+        addMethod.ShouldNotBeNull();
+
+        // Load compilation
+        var workspace = MSBuildWorkspace.Create();
+        var project = await workspace.OpenProjectAsync(projectPath);
+        var compilation = await project.GetCompilationAsync();
+
+        compilation.ShouldNotBeNull();
+
+        // Collect context with call sites
+        var context = await collector.CollectContext(addMethod, compilation);
+
+        // Assert - Calculator.Add should have call sites from CalculatorUsage
+        context.ShouldNotBeNull();
+        context.CallSites.ShouldNotBeEmpty();
+        context.CallSites.ShouldContain(cs => cs.CallExpression.Contains("Add"));
     }
 }

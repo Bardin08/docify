@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Docify.Core\Docify.Core.csproj" />
+     <ProjectReference Include="..\Docify.LLM\Docify.LLM.csproj" />
   </ItemGroup>
 
   <ItemGroup>
