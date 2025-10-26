@@ -2,6 +2,7 @@ using Docify.Core.Models;
 using Docify.LLM.Abstractions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.FindSymbols;
+using Microsoft.CodeAnalysis.Host.Mef;
 using Microsoft.Extensions.Logging;
 
 namespace Docify.LLM.ContextCollection;
@@ -106,8 +107,9 @@ public class CallSiteCollector(ILogger<CallSiteCollector> logger) : ICallSiteCol
 
     private Solution CreateSolutionFromCompilation(Compilation compilation)
     {
-        // Create an ad-hoc workspace and solution for FindReferencesAsync
-        var workspace = new AdhocWorkspace();
+        // Create an ad-hoc workspace with MEF host services for C# language support
+        var host = MefHostServices.Create(MefHostServices.DefaultAssemblies);
+        var workspace = new AdhocWorkspace(host);
         var projectInfo = ProjectInfo.Create(
             ProjectId.CreateNewId(),
             VersionStamp.Create(),

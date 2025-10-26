@@ -17,6 +17,9 @@ public class SignatureContextCollector(
     ICallSiteCollector callSiteCollector,
     IStalenessDetector? stalenessDetector = null) : IContextCollector
 {
+    private static readonly SymbolDisplayFormat _typeDisplayFormat = SymbolDisplayFormat.MinimallyQualifiedFormat
+        .WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier | SymbolDisplayMiscellaneousOptions.UseSpecialTypes);
+
     /// <inheritdoc/>
     public async Task<ApiContext> CollectContext(
         ApiSymbol symbol,
@@ -115,7 +118,7 @@ public class SignatureContextCollector(
             case IMethodSymbol methodSymbol:
             {
                 var parametersList = methodSymbol.Parameters
-                    .Select(x => $"{x.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)} {x.Name}");
+                    .Select(x => $"{x.Type.ToDisplayString(_typeDisplayFormat)} {x.Name}");
 
                 parameters.AddRange(parametersList);
 
@@ -136,7 +139,7 @@ public class SignatureContextCollector(
             {
                 foreach (var param in propertySymbol.Parameters)
                 {
-                    var paramType = param.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+                    var paramType = param.Type.ToDisplayString(_typeDisplayFormat);
                     parameters.Add($"{paramType} {param.Name}");
                 }
 
@@ -177,10 +180,8 @@ public class SignatureContextCollector(
         return symbol switch
         {
             IMethodSymbol { ReturnsVoid: true } => null,
-            IMethodSymbol methodSymbol => methodSymbol.ReturnType.ToDisplayString(SymbolDisplayFormat
-                .MinimallyQualifiedFormat),
-            IPropertySymbol propertySymbol => propertySymbol.Type.ToDisplayString(SymbolDisplayFormat
-                .MinimallyQualifiedFormat),
+            IMethodSymbol methodSymbol => methodSymbol.ReturnType.ToDisplayString(_typeDisplayFormat),
+            IPropertySymbol propertySymbol => propertySymbol.Type.ToDisplayString(_typeDisplayFormat),
             _ => null
         };
     }
