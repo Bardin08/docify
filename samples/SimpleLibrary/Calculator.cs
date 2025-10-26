@@ -29,7 +29,6 @@ public class Calculator
     /// Adds two numbers and returns the result.
     /// </summary>
     /// <param name="a">The first number to add.</param>
-    /// <param name="b">The second number to add.</param>
     /// <returns>The sum of the two numbers.</returns>
     public double Add(double a, double b)
     {

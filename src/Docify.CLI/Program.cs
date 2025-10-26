@@ -1,19 +1,44 @@
-﻿namespace Docify.CLI;
+﻿using System.CommandLine;
+using Docify.CLI.Commands;
+using Docify.CLI.Formatters;
+using Docify.Core.Analyzers;
+using Docify.Core.Interfaces;
+using Microsoft.Extensions.DependencyInjection;
+using Serilog;
 
-/// <summary>
-/// Entry point for the Docify CLI application.
-/// </summary>
-internal class Program
+// Configure Serilog
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .WriteTo.Console()
+    .CreateLogger();
+
+try
 {
-    /// <summary>
-    /// Main entry point for the application.
-    /// </summary>
-    /// <param name="args">Command line arguments.</param>
-    /// <returns>Exit code.</returns>
-    internal static int Main(string[] args)
-    {
-        Console.WriteLine("Docify CLI - Documentation Generator");
-        Console.WriteLine("🚧 Under construction - check back soon!");
-        return 0;
-    }
+    // Build service provider
+    await using var serviceProvider = new ServiceCollection()
+        .AddLogging(builder => builder.AddSerilog(dispose: true))
+        .AddSingleton<IDocumentationDetector, DocumentationDetector>()
+        .AddSingleton<ISymbolExtractor, SymbolExtractor>()
+        .AddSingleton<ICodeAnalyzer, RoslynAnalyzer>()
+        .AddSingleton<TextReportFormatter>()
+        .AddSingleton<JsonReportFormatter>()
+        .AddSingleton<MarkdownReportFormatter>()
+        .AddSingleton<IReportFormatterFactory, ReportFormatterFactory>()
+        .AddSingleton<AnalyzeCommand>()
+        .AddSingleton(ConstructRootCommand)
+        .BuildServiceProvider();
+
+    var rootCommand = serviceProvider.GetRequiredService<RootCommand>();
+    return await rootCommand.InvokeAsync(args);
+}
+finally
+{
+    await Log.CloseAndFlushAsync();
+}
+
+RootCommand ConstructRootCommand(IServiceProvider sp1)
+{
+    var rootCommand = new RootCommand("Docify - AI-Powered XML Documentation Generator for .NET");
+    rootCommand.AddCommand(sp1.GetRequiredService<AnalyzeCommand>());
+    return rootCommand;
 }
