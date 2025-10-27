@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Docify.Core\Docify.Core.csproj" />
      <ProjectReference Include="..\Docify.LLM\Docify.LLM.csproj" />
+     <ProjectReference Include="..\Docify.Writer\Docify.Writer.csproj" />
   </ItemGroup>
 
   <ItemGroup>

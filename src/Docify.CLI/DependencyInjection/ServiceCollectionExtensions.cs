@@ -4,6 +4,9 @@ using Docify.LLM.ContextCollection;
 using Docify.LLM.PromptEngineering;
 using Docify.LLM.Providers;
 using Docify.LLM.Secrets;
+using Docify.Writer.Backup;
+using Docify.Writer.Interfaces;
+using Docify.Writer.Writing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -38,6 +41,17 @@ public static class ServiceCollectionExtensions
 
         // Provider factory
         services.AddSingleton<LlmProviderFactory>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds Writer-related services to the service collection.
+    /// </summary>
+    public static IServiceCollection AddWriterServices(this IServiceCollection services)
+    {
+        services.AddSingleton<IBackupManager, BackupManager>();
+        services.AddSingleton<IDocumentationWriter, DocumentationWriter>();
 
         return services;
     }
