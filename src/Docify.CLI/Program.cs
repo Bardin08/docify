@@ -26,8 +26,10 @@ try
         .AddSingleton<MarkdownReportFormatter>()
         .AddSingleton<IReportFormatterFactory, ReportFormatterFactory>()
         .AddLlmServices()
+        .AddWriterServices()
         .AddSingleton<AnalyzeCommand>()
         .AddSingleton<ConfigCommand>()
+        .AddSingleton<RestoreCommand>()
         .AddSingleton(ConstructRootCommand)
         .BuildServiceProvider();
 
@@ -44,5 +46,6 @@ RootCommand ConstructRootCommand(IServiceProvider sp1)
     var rootCommand = new RootCommand("Docify - AI-Powered XML Documentation Generator for .NET");
     rootCommand.AddCommand(sp1.GetRequiredService<AnalyzeCommand>());
     rootCommand.AddCommand(sp1.GetRequiredService<ConfigCommand>());
+    rootCommand.AddCommand(sp1.GetRequiredService<RestoreCommand>());
     return rootCommand;
 }
