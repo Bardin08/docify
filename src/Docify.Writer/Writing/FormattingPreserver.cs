@@ -69,31 +69,37 @@ public static class FormattingPreserver
         // Remove any existing leading/trailing whitespace and normalize line endings
         var normalized = xml.Trim().Replace("\r\n", "\n");
 
-        // Split tags and content properly:
-        // Pattern 1: <tag>content</tag> on same line -> keep as is
-        // Pattern 2: <tag>content\n</tag> -> <tag>content\n</tag>
-        // Pattern 3: <tag>\ncontent\n</tag> -> <tag>content\n</tag>
+        // Strategy:
+        // 1. If <tag>\ncontent... -> keep newline after tag (multi-line format)
+        // 2. If <tag>content... -> keep on same line (single-line format)
 
-        // Remove newlines immediately after opening tags
-        normalized = System.Text.RegularExpressions.Regex.Replace(
-            normalized,
-            @"(<[^/>][^>]*>)\s*\n\s*",
-            "$1"
-        );
+        // If there are already newlines in the content (multi-line)
+        if (normalized.Contains('\n'))
+        {
+            // Clean up excessive whitespace but preserve intentional newlines after opening tags
+            // If there's a newline immediately after an opening tag, preserve it
+            // Otherwise, remove any accidental spacing
 
-        // Ensure closing tags are on their own line (except for single-line tags)
-        normalized = System.Text.RegularExpressions.Regex.Replace(
-            normalized,
-            @"([^\n>])(\s*</[^>]+>)",
-            "$1\n$2"
-        );
+            // Ensure each new opening tag (after a closing tag) is on a new line
+            normalized = System.Text.RegularExpressions.Regex.Replace(
+                normalized,
+                @"(</[^>]+>)(<[^/])",
+                "$1\n$2"
+            );
 
-        // Ensure each new opening tag (after a closing tag) is on a new line
-        normalized = System.Text.RegularExpressions.Regex.Replace(
-            normalized,
-            @"(</[^>]+>)(<[^/])",
-            "$1\n$2"
-        );
+            // Clean up excessive whitespace on lines but don't remove the newlines
+            var lines = normalized.Split('\n');
+            normalized = string.Join("\n", lines.Select(line => line.Trim()));
+        }
+        else
+        {
+            // Single line XML - keep as is, just ensure proper spacing between tags
+            normalized = System.Text.RegularExpressions.Regex.Replace(
+                normalized,
+                @"(</[^>]+>)(<[^/])",
+                "$1\n$2"
+            );
+        }
 
         return normalized;
     }
