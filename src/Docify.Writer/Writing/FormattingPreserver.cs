@@ -42,18 +42,60 @@ public static class FormattingPreserver
         ArgumentNullException.ThrowIfNull(indentation);
         ArgumentNullException.ThrowIfNull(lineEnding);
 
-        // Split on both \r\n and \n to handle any input format
-        var xmlLines = xmlDocumentation.Replace("\r\n", "\n").Split('\n');
+        // First, normalize the XML to have proper line breaks between tags
+        var normalizedXml = NormalizeXmlFormatting(xmlDocumentation);
 
-        var formattedLines = xmlLines.Select(line =>
-        {
-            var trimmedLine = line.TrimStart();
-            return trimmedLine.Length > 0
-                ? $"{indentation}/// {trimmedLine}"
-                : $"{indentation}///";
-        });
+        // Split on both \r\n and \n to handle any input format
+        var xmlLines = normalizedXml.Replace("\r\n", "\n").Split('\n');
+
+        var formattedLines = xmlLines
+            .Where(line => !string.IsNullOrWhiteSpace(line)) // Remove empty lines
+            .Select(line =>
+            {
+                var trimmedLine = line.Trim();
+                return $"{indentation}/// {trimmedLine}";
+            });
 
         return string.Join(lineEnding, formattedLines);
+    }
+
+    /// <summary>
+    /// Normalizes XML formatting by ensuring tags and content are properly separated
+    /// </summary>
+    /// <param name="xml">Raw XML content</param>
+    /// <returns>Normalized XML with proper line breaks</returns>
+    private static string NormalizeXmlFormatting(string xml)
+    {
+        // Remove any existing leading/trailing whitespace and normalize line endings
+        var normalized = xml.Trim().Replace("\r\n", "\n");
+
+        // Split tags and content properly:
+        // Pattern 1: <tag>content</tag> on same line -> keep as is
+        // Pattern 2: <tag>content\n</tag> -> <tag>content\n</tag>
+        // Pattern 3: <tag>\ncontent\n</tag> -> <tag>content\n</tag>
+
+        // Remove newlines immediately after opening tags
+        normalized = System.Text.RegularExpressions.Regex.Replace(
+            normalized,
+            @"(<[^/>][^>]*>)\s*\n\s*",
+            "$1"
+        );
+
+        // Ensure closing tags are on their own line (except for single-line tags)
+        normalized = System.Text.RegularExpressions.Regex.Replace(
+            normalized,
+            @"([^\n>])(\s*</[^>]+>)",
+            "$1\n$2"
+        );
+
+        // Ensure each new opening tag (after a closing tag) is on a new line
+        normalized = System.Text.RegularExpressions.Regex.Replace(
+            normalized,
+            @"(</[^>]+>)(<[^/])",
+            "$1\n$2"
+        );
+
+        return normalized;
     }
 
     /// <summary>

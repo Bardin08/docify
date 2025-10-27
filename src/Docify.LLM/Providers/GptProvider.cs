@@ -1,10 +1,11 @@
-using System.Xml.Linq;
+using System.Text.Json;
 using Docify.Core.Models;
 using Docify.LLM.Abstractions;
 using Docify.LLM.Exceptions;
 using Docify.LLM.Models;
 using Docify.LLM.PromptEngineering;
 using Docify.LLM.Utilities;
+using Docify.LLM.Utils;
 using Docify.LLM.Validation;
 using Microsoft.Extensions.Logging;
 using OpenAI.Chat;
@@ -22,8 +23,7 @@ public class GptProvider(
     ILogger<GptProvider> logger) : ILlmProvider
 {
     private const string _modelName = "gpt-5-nano";
-    private const int _maxTokens = 1000;
-    private const float _temperature = 0.3f;
+    private const int _maxTokens = 4000;
 
     private readonly ISecretStore _secretStore = secretStore ?? throw new ArgumentNullException(nameof(secretStore));
 
@@ -55,10 +55,27 @@ public class GptProvider(
             new UserChatMessage(promptText)
         };
 
+        // Generate structured output schema
+        var fullSchemaJson = OpenAiJsonSchemaUtils.GenerateSchema<XmlDocumentationResponse>(
+            "xml_documentation",
+            "XML documentation for a C# API");
+
+        // Extract just the "schema" object from the generated JSON
+        // The generator produces: { "name": "...", "strict": true, "schema": {...} }
+        // But CreateJsonSchemaFormat expects just the inner schema object
+        var schemaDocument = JsonDocument.Parse(fullSchemaJson);
+        var innerSchema = schemaDocument.RootElement.GetProperty("schema");
+        var schemaJson = JsonSerializer.Serialize(innerSchema);
+
+        var schema = BinaryData.FromString(schemaJson);
+
         var options = new ChatCompletionOptions
         {
             MaxOutputTokenCount = _maxTokens,
-            Temperature = _temperature
+            ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
+                jsonSchemaFormatName: "xml_documentation",
+                jsonSchema: schema,
+                jsonSchemaIsStrict: true)
         };
 
         ChatCompletion response;
@@ -85,10 +102,61 @@ public class GptProvider(
             throw new ProviderException("openai", $"OpenAI API request failed: {ex.Message}", ex);
         }
 
-        var generatedXml = response.Content[0].Text;
+        // Check for refusal first
+        if (!string.IsNullOrEmpty(response.Refusal))
+        {
+            _logger.LogError("OpenAI refused the request: {Refusal}", response.Refusal);
+            throw new ProviderException("openai", $"OpenAI refused the request: {response.Refusal}");
+        }
 
-        _logger.LogDebug("Received response from OpenAI for {ApiSymbolId} ({Length} characters)", context.ApiSymbolId,
-            generatedXml.Length);
+        // Check if content exists
+        if (response.Content == null || response.Content.Count == 0)
+        {
+            _logger.LogError("OpenAI returned empty content array");
+            throw new ProviderException("openai", "OpenAI returned empty content");
+        }
+
+        var contentPart = response.Content.FirstOrDefault();
+        if (contentPart == null)
+        {
+            _logger.LogError("OpenAI returned null content part");
+            throw new ProviderException("openai", "OpenAI returned null content part");
+        }
+
+        var responseText = contentPart.Text;
+
+        _logger.LogDebug("Raw response from OpenAI for {ApiSymbolId}: {ResponseText}",
+            context.ApiSymbolId, responseText ?? "(null)");
+
+        if (string.IsNullOrWhiteSpace(responseText))
+        {
+            _logger.LogError("OpenAI returned empty or whitespace response text");
+            throw new ProviderException("openai", "OpenAI returned empty response text");
+        }
+
+        // Parse structured response
+        XmlDocumentationResponse? structuredResponse;
+        try
+        {
+            structuredResponse = JsonSerializer.Deserialize<XmlDocumentationResponse>(responseText);
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "Failed to deserialize structured response from OpenAI. Response text: {ResponseText}",
+                responseText);
+            throw new ProviderException("openai", $"Invalid JSON response from OpenAI: {ex.Message}", ex);
+        }
+
+        if (structuredResponse == null || string.IsNullOrWhiteSpace(structuredResponse.XmlDocumentation))
+        {
+            _logger.LogError("Deserialized response is null or has empty XmlDocumentation");
+            throw new ProviderException("openai", "OpenAI returned empty or invalid documentation");
+        }
+
+        var generatedXml = structuredResponse.XmlDocumentation;
+
+        _logger.LogDebug("Successfully parsed structured response from OpenAI for {ApiSymbolId} ({Length} characters)",
+            context.ApiSymbolId, generatedXml.Length);
 
         // Validate XML using OutputValidator
         var validationResult = _outputValidator.ValidateXmlDocumentation(generatedXml, context);
@@ -110,19 +178,17 @@ public class GptProvider(
 
         // Log any non-critical issues (warnings)
         if (validationResult.Issues.Count > 0)
-        {
             foreach (var issue in validationResult.Issues)
                 _logger.LogWarning("Validation warning for {ApiSymbolId}: {Issue}", context.ApiSymbolId, issue);
-        }
 
         // Calculate actual token usage and cost
         var inputTokens = response.Usage.InputTokenCount;
         var outputTokens = response.Usage.OutputTokenCount;
         var totalTokens = inputTokens + outputTokens;
 
-        // GPT-5-nano pricing: $0.05/M input tokens, $0.40/M output tokens (as of 2024)
-        var inputCost = inputTokens / 1_000_000m * 0.05m;
-        var outputCost = outputTokens / 1_000_000m * 0.40m;
+        // GPT-4o-mini pricing: $0.15/M input tokens, $0.60/M output tokens (as of 2024)
+        var inputCost = inputTokens / 1_000_000m * 0.15m;
+        var outputCost = outputTokens / 1_000_000m * 0.60m;
         var estimatedCost = inputCost + outputCost;
 
         _logger.LogInformation(
