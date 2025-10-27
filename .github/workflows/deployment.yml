@@ -1,0 +1,124 @@
+name: Deploy .NET Tool (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Full SemVer (e.g., 1.4.0 or 1.4.0-beta.2)"
+        required: true
+      environment:
+        description: "Environment name for the Deployments UI (e.g., nuget)"
+        required: false
+        default: "nuget"
+      release_notes:
+        description: "Optional release notes body"
+        required: false
+        default: ""
+
+permissions:
+  contents: write      # create release / tag
+  deployments: write   # create deployment entries
+  id-token: none
+
+jobs:
+  deploy:
+    name: Publish .NET Tool to NuGet & Create Deployment
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    concurrency:
+      group: dotnet-tool-deploy
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test --configuration Release --no-build --verbosity normal
+
+      - name: Validate version format (SemVer incl. prerelease)
+        id: semver
+        shell: bash
+        run: |
+          V="${{ github.event.inputs.version }}"
+          if [[ ! "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid SemVer: $V" >&2
+            exit 1
+          fi
+          if [[ "$V" == *-* ]]; then echo "is_pre=true"  >> $GITHUB_OUTPUT; else echo "is_pre=false" >> $GITHUB_OUTPUT; fi
+
+      - name: Pack (.NET tool)
+        run: >
+          dotnet pack src/Docify.CLI/Docify.CLI.csproj
+          --configuration Release
+          /p:PackAsTool=true
+          /p:Version=${{ github.event.inputs.version }}
+          -o ./artifacts
+
+      - name: Publish to NuGet.org
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: >
+          dotnet nuget push "./artifacts/*.nupkg"
+          --api-key "$NUGET_API_KEY"
+          --source "https://api.nuget.org/v3/index.json"
+          --skip-duplicate
+
+      - name: Create Git tag & Release on GitHub
+        id: gh_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          name: Docify.CLI v${{ github.event.inputs.version }}
+          prerelease: ${{ steps.semver.outputs.is_pre }}
+          body: ${{ github.event.inputs.release_notes }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Deployment (Deployments tab)
+        id: create_deploy
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const envName = `${{ github.event.inputs.environment }}` || 'nuget';
+            const version = `${{ github.event.inputs.version }}`;
+            const { data: deployment } = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.sha,
+              environment: envName,
+              auto_merge: false,
+              required_contexts: [],
+              description: `Published Docify.CLI ${version} to NuGet`,
+              payload: { version }
+            });
+            core.setOutput('deployment_id', deployment.id.toString());
+
+      - name: Set Deployment Status = success
+        if: ${{ steps.create_deploy.outputs.deployment_id }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const deployment_id = Number(`${{ steps.create_deploy.outputs.deployment_id }}`);
+            const version = `${{ github.event.inputs.version }}`;
+            const pkgUrl = `https://www.nuget.org/packages/Docify.CLI/${version}`;
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id,
+              state: 'success',
+              environment_url: pkgUrl,
+              log_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: `NuGet published: ${pkgUrl}`
+            });
