@@ -103,11 +103,7 @@ public class SignatureContextCollector(
         return null;
     }
 
-    private string GetFullyQualifiedName(ISymbol symbol)
-    {
-        return symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
-            .WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted));
-    }
+    private string GetFullyQualifiedName(ISymbol symbol) => symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
     private List<string> ExtractParameterTypes(ISymbol symbol)
     {
@@ -190,23 +186,38 @@ public class SignatureContextCollector(
     {
         var hierarchy = new List<string>();
 
-        if (symbol.ContainingType != null)
+        // For type symbols (classes, interfaces), extract their own inheritance hierarchy
+        if (symbol is INamedTypeSymbol namedTypeSymbol)
+        {
+            // Traverse base types
+            var currentType = namedTypeSymbol.BaseType;
+            while (currentType != null && currentType.SpecialType != SpecialType.System_Object)
+            {
+                hierarchy.Add(currentType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+                currentType = currentType.BaseType;
+            }
+
+            // Add implemented interfaces
+            hierarchy.AddRange(
+                namedTypeSymbol.Interfaces
+                    .Select(interfaceType => interfaceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+        }
+        // For members, extract the containing type's hierarchy
+        else if (symbol.ContainingType != null)
         {
             var currentType = symbol.ContainingType;
 
             // Traverse base types
             while (currentType?.BaseType != null && currentType.BaseType.SpecialType != SpecialType.System_Object)
             {
-                hierarchy.Add(currentType.BaseType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
-                    .WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)));
+                hierarchy.Add(currentType.BaseType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
                 currentType = currentType.BaseType;
             }
 
             // Add implemented interfaces
             currentType = symbol.ContainingType;
             foreach (var interfaceType in currentType.Interfaces)
-                hierarchy.Add(interfaceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
-                    .WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)));
+                hierarchy.Add(interfaceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
         }
 
         return hierarchy;
