@@ -26,4 +26,19 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <PackAsTool>true</PackAsTool>
+
+    <PackageId>Docify.CLI</PackageId>
+    <ToolCommandName>docify</ToolCommandName>
+
+    <Version>1.0.0</Version>
+    <Authors>Vladyslav Bardin</Authors>
+    <Description>CLI tool for generating project documentation using AI.</Description>
+    <PackageProjectUrl>https://github.com/bardin08/docify</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/bardin08/docify</RepositoryUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
 </Project>
