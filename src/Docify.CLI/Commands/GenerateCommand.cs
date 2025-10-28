@@ -58,22 +58,39 @@ public class GenerateCommand : Command
             description: "Preview changes without writing to files",
             getDefaultValue: () => false);
 
+        var parallelismOption = new Option<int>(
+            name: "--parallelism",
+            description: "Number of concurrent API requests (1-10, default: 3)",
+            getDefaultValue: () => 3);
+
         AddArgument(projectPathArgument);
         AddOption(intensityOption);
         AddOption(autoAcceptOption);
         AddOption(dryRunOption);
+        AddOption(parallelismOption);
 
-        this.SetHandler(async (projectPath, intensity, autoAccept, dryRun) =>
+        this.SetHandler(async (projectPath, intensity, autoAccept, dryRun, parallelism) =>
         {
-            await CommandHandler(projectPath, intensity, autoAccept, dryRun);
-        }, projectPathArgument, intensityOption, autoAcceptOption, dryRunOption);
+            await CommandHandler(projectPath, intensity, autoAccept, dryRun, parallelism);
+        }, projectPathArgument, intensityOption, autoAcceptOption, dryRunOption, parallelismOption);
     }
 
-    private async Task CommandHandler(string projectPath, string intensity, bool autoAccept, bool dryRun)
+    private async Task CommandHandler(string projectPath, string intensity, bool autoAccept, bool dryRun, int parallelism)
     {
+        // Validate parallelism
+        if (parallelism is < 1 or > 10)
+        {
+            _logger.LogError("Parallelism must be between 1 and 10. Got: {Parallelism}", parallelism);
+            Environment.ExitCode = 1;
+            return;
+        }
+
+        using var cts = new CancellationTokenSource();
+
         try
         {
-            _logger.LogInformation("Starting documentation generation for {ProjectPath}", projectPath);
+            _logger.LogInformation("Starting documentation generation for {ProjectPath} (parallelism: {Parallelism})",
+                projectPath, parallelism);
 
             // Stage 1: Analyze and filter
             var (result, filteredApis) = await AnalyzeAndFilterApis(projectPath, intensity);
@@ -94,7 +111,7 @@ public class GenerateCommand : Command
             var provider = await LoadLlmProvider();
 
             // Stage 4: Generate documentation
-            var suggestions = await GenerateDocumentation(filteredApis, result.Compilation, provider);
+            var suggestions = await GenerateDocumentation(filteredApis, result.Compilation, provider, parallelism, cts);
             if (suggestions.Count == 0)
             {
                 _logger.LogWarning("No documentation was generated successfully. Nothing to write.");
@@ -121,6 +138,16 @@ public class GenerateCommand : Command
 
             // Stage 7: Write to files
             await WriteDocumentationToFiles(suggestions, projectPath);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("Authentication failed"))
+        {
+            // Authentication error already displayed to user in GenerateDocumentation
+            Environment.ExitCode = 1;
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Documentation generation was cancelled");
+            Environment.ExitCode = 1;
         }
         catch (ArgumentException ex)
         {
@@ -164,35 +191,98 @@ public class GenerateCommand : Command
     private async Task<List<GeneratedDocumentation>> GenerateDocumentation(
         List<ApiSymbol> apis,
         Compilation compilation,
-        ILlmProvider provider)
+        ILlmProvider provider,
+        int parallelism,
+        CancellationTokenSource cts)
     {
         var suggestions = new List<GeneratedDocumentation>();
+        var completedCount = 0;
+        var lockObject = new object();
+        var authFailureDetected = false;
+        string? authErrorMessage = null;
 
-        for (var i = 0; i < apis.Count; i++)
+        var semaphore = new SemaphoreSlim(parallelism, parallelism);
+        var tasks = apis.Select(async api =>
         {
-            var api = apis[i];
-            _logger.LogInformation("[Progress: {Current}/{Total}] Generating documentation for {ApiName}",
-                i + 1, apis.Count, api.FullyQualifiedName);
-
+            await semaphore.WaitAsync(cts.Token);
             try
             {
-                var context = await _contextCollector.CollectContext(api, compilation);
-                var docSuggestion = await provider.GenerateDocumentationAsync(context);
+                cts.Token.ThrowIfCancellationRequested();
 
-                suggestions.Add(new GeneratedDocumentation
+                var currentIndex = Interlocked.Increment(ref completedCount);
+                _logger.LogInformation("[Progress: {Current}/{Total}] Generating documentation for {ApiName}",
+                    currentIndex, apis.Count, api.FullyQualifiedName);
+
+                var context = await _contextCollector.CollectContext(api, compilation, cts.Token);
+                var docSuggestion = await provider.GenerateDocumentationAsync(context, cts.Token);
+
+                var doc = new GeneratedDocumentation
                 {
                     ApiSymbol = api,
                     XmlDocumentation = docSuggestion.GeneratedXml,
                     FilePath = api.FilePath
-                });
+                };
+
+                lock (lockObject)
+                {
+                    suggestions.Add(doc);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Silently absorb cancellations - they're intentional
+            }
+            catch (InvalidOperationException ex) when (IsAuthenticationError(ex))
+            {
+                lock (lockObject)
+                {
+                    if (!authFailureDetected)
+                    {
+                        authFailureDetected = true;
+                        authErrorMessage = ex.Message;
+                        cts.Cancel();
+                    }
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to generate documentation for {ApiName}", api.FullyQualifiedName);
+                if (!authFailureDetected)
+                {
+                    _logger.LogError(ex, "Failed to generate documentation for {ApiName}", api.FullyQualifiedName);
+                }
             }
+            finally
+            {
+                semaphore.Release();
+            }
+        }).ToList();
+
+        try
+        {
+            await Task.WhenAll(tasks);
+        }
+        catch
+        {
+            // All errors are already handled in individual tasks
+        }
+
+        if (authFailureDetected)
+        {
+            Console.WriteLine("\n❌ Authentication Failed");
+            Console.WriteLine($"   {authErrorMessage}");
+            Console.WriteLine($"   Run: docify config set-api-key <provider>\n");
+            throw new InvalidOperationException("Authentication failed");
         }
 
         return suggestions;
+    }
+
+    private bool IsAuthenticationError(Exception ex)
+    {
+        return ex.Message.Contains("Invalid API key", StringComparison.OrdinalIgnoreCase) ||
+               ex.Message.Contains("API key", StringComparison.OrdinalIgnoreCase) ||
+               ex.Message.Contains("401") ||
+               ex.Message.Contains("Unauthorized");
     }
 
     private async Task WriteDocumentationToFiles(List<GeneratedDocumentation> suggestions, string projectPath)
