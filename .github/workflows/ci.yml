@@ -30,6 +30,6 @@ jobs:
       run: dotnet build --no-restore --configuration Release
 
     - name: Run tests
-      run: dotnet test --no-build --configuration Release --verbosity normal
+      run: dotnet test --configuration Release --verbosity normal
       env:
         VSTEST_CONNECTION_TIMEOUT: 300
