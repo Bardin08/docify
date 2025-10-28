@@ -12,11 +12,13 @@ namespace Docify.Writer.Backup;
 public class BackupManager : IBackupManager
 {
     private readonly ILogger<BackupManager> _logger;
+    private readonly string? _baseBackupPath;
 
-    public BackupManager(ILogger<BackupManager> logger)
+    public BackupManager(ILogger<BackupManager> logger, string? baseBackupPath = null)
     {
         ArgumentNullException.ThrowIfNull(logger);
         _logger = logger;
+        _baseBackupPath = baseBackupPath;
     }
 
     /// <inheritdoc />
@@ -135,10 +137,18 @@ public class BackupManager : IBackupManager
         return hashHex[..16].ToLowerInvariant();
     }
 
-    private static string GetBackupDirectory(string projectHash, string timestamp)
+    private string GetBackupDirectory(string projectHash, string timestamp)
     {
-        var userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        return Path.Combine(userHome, ".docify", "backups", projectHash, $"backup-{timestamp}");
+        var baseDir = _baseBackupPath;
+        if (string.IsNullOrEmpty(baseDir))
+        {
+            baseDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            if (string.IsNullOrEmpty(baseDir))
+            {
+                baseDir = Path.GetTempPath();
+            }
+        }
+        return Path.Combine(baseDir, ".docify", "backups", projectHash, $"backup-{timestamp}");
     }
 
     private static string EnsureUniqueBackupDirectory(string backupDir)

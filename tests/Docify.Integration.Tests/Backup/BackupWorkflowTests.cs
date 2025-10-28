@@ -18,11 +18,16 @@ public class BackupWorkflowTests : IDisposable
     public BackupWorkflowTests()
     {
         var mockLogger = new Mock<ILogger<BackupManager>>();
-        _backupManager = new BackupManager(mockLogger.Object);
-
         _tempProjectPath = Path.Combine(Path.GetTempPath(), $"docify-integration-{Guid.NewGuid()}");
         Directory.CreateDirectory(_tempProjectPath);
         _tempDirsCreated.Add(_tempProjectPath);
+
+        // Use temp directory for backups in tests to avoid permission issues
+        var tempBackupBase = Path.Combine(Path.GetTempPath(), $"docify-backups-{Guid.NewGuid()}");
+        Directory.CreateDirectory(tempBackupBase);
+        _tempDirsCreated.Add(tempBackupBase);
+
+        _backupManager = new BackupManager(mockLogger.Object, tempBackupBase);
     }
 
     public void Dispose()
