@@ -1,6 +1,7 @@
 # Docify
 
 [![CI](https://github.com/Bardin08/docify/actions/workflows/ci.yml/badge.svg)](https://github.com/Bardin08/docify/actions/workflows/ci.yml)
+[![NuGet](https://img.shields.io/nuget/v/Docify.CLI.svg)](https://www.nuget.org/packages/Docify.CLI)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-8.0-purple.svg)](https://dotnet.microsoft.com/download/dotnet/8.0)
 
@@ -24,18 +25,24 @@ Docify analyzes .NET codebases using Roslyn and generates contextually-aware XML
 ## Installation
 
 ```bash
-dotnet tool install -g docify
+dotnet tool install -g Docify.CLI
 ```
 
-*Note: Not yet published to NuGet*
-
-## Usage
+## Quick Start
 
 ```bash
+# Configure your LLM provider
+docify config set-provider openai
+docify config set-api-key openai
+
+# Analyze your project
+docify analyze <project-path>
+
+# Generate documentation
 docify generate <project-path>
 ```
 
-*Full documentation coming soon*
+📖 **[Read the complete Quick Start Guide](QUICKSTART.md)** for detailed instructions, command reference, and best practices.
 
 ## Contributing
 
