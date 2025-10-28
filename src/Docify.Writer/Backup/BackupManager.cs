@@ -31,7 +31,7 @@ public class BackupManager : IBackupManager
         try
         {
             var projectHash = GenerateProjectHash(projectPath);
-            var timestamp = DateTime.Now.ToString("yyyy-MM-dd-HHmmss");
+            var timestamp = DateTime.Now.ToString("yyyy-MM-dd-HHmmss-fff");
             var backupDir = GetBackupDirectory(projectHash, timestamp);
 
             backupDir = EnsureUniqueBackupDirectory(backupDir);
