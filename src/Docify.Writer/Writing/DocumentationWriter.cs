@@ -75,6 +75,19 @@ public class DocumentationWriter : IDocumentationWriter
             // Insert documentation
             var modifiedContent = sourceContent.Insert(insertionPosition, formattedXml + lineEnding);
 
+            // Validate syntax after insertion
+            var syntaxValidationResult = ValidateSyntax(modifiedContent, filePath);
+            if (!syntaxValidationResult.IsValid)
+            {
+                _logger.LogWarning("Syntax errors detected after documentation insertion in {FilePath}: {Errors}",
+                    filePath, string.Join(", ", syntaxValidationResult.Errors));
+
+                // Rollback: restore from backup
+                await _backupManager.RestoreBackup(backupPath, projectPath).ConfigureAwait(false);
+
+                throw new AnalysisException($"Documentation insertion caused syntax errors in {filePath}. File restored from backup. Errors: {string.Join(", ", syntaxValidationResult.Errors)}");
+            }
+
             // Write modified content atomically
             await WriteFileAtomically(filePath, modifiedContent).ConfigureAwait(false);
 
@@ -176,5 +189,56 @@ public class DocumentationWriter : IDocumentationWriter
 
             throw new FileSystemException($"Failed to write to file: {filePath}", ex);
         }
+    }
+
+    /// <summary>
+    /// Validates that the modified content has no syntax errors
+    /// </summary>
+    /// <param name="content">File content to validate</param>
+    /// <param name="filePath">File path (for logging)</param>
+    /// <returns>Validation result with error details</returns>
+    private SyntaxValidationResult ValidateSyntax(string content, string filePath)
+    {
+        try
+        {
+            // Parse the modified content with Roslyn
+            var syntaxTree = CSharpSyntaxTree.ParseText(content);
+            var diagnostics = syntaxTree.GetDiagnostics();
+
+            // Filter for errors only (ignore warnings)
+            var errors = diagnostics
+                .Where(d => d.Severity == DiagnosticSeverity.Error)
+                .Select(d => d.GetMessage())
+                .ToList();
+
+            if (errors.Count > 0)
+            {
+                return new SyntaxValidationResult
+                {
+                    IsValid = false,
+                    Errors = errors
+                };
+            }
+
+            return new SyntaxValidationResult { IsValid = true, Errors = [] };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to validate syntax for {FilePath}", filePath);
+            return new SyntaxValidationResult
+            {
+                IsValid = false,
+                Errors = [$"Syntax validation failed: {ex.Message}"]
+            };
+        }
+    }
+
+    /// <summary>
+    /// Result of syntax validation
+    /// </summary>
+    private sealed class SyntaxValidationResult
+    {
+        public required bool IsValid { get; init; }
+        public required List<string> Errors { get; init; }
     }
 }
