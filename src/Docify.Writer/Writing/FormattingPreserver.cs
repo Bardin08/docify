@@ -118,4 +118,123 @@ public static class FormattingPreserver
 
         return crlfCount > lfOnlyCount ? "\r\n" : "\n";
     }
+
+    /// <summary>
+    /// Validates that formatting is preserved after documentation insertion
+    /// </summary>
+    /// <param name="originalContent">Original file content before modification</param>
+    /// <param name="modifiedContent">Modified file content after documentation insertion</param>
+    /// <param name="insertedDocumentation">The documentation that was inserted (with line ending)</param>
+    /// <returns>True if formatting is preserved, false otherwise</returns>
+    public static bool ValidateFormattingPreserved(string originalContent, string modifiedContent, string insertedDocumentation)
+    {
+        ArgumentNullException.ThrowIfNull(originalContent);
+        ArgumentNullException.ThrowIfNull(modifiedContent);
+        ArgumentNullException.ThrowIfNull(insertedDocumentation);
+
+        // Normalize line endings for comparison
+        var normalizedOriginal = originalContent.Replace("\r\n", "\n");
+        var normalizedModified = modifiedContent.Replace("\r\n", "\n");
+        var normalizedInserted = insertedDocumentation.Replace("\r\n", "\n");
+
+        // Expected length after insertion
+        var expectedLength = normalizedOriginal.Length + normalizedInserted.Length;
+
+        // Quick length check
+        if (normalizedModified.Length != expectedLength)
+        {
+            return false;
+        }
+
+        // Remove the inserted documentation from modified content
+        var modifiedWithoutDoc = normalizedModified.Replace(normalizedInserted, "", StringComparison.Ordinal);
+
+        // Compare: original should match modified without the documentation
+        return string.Equals(normalizedOriginal, modifiedWithoutDoc, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Counts blank lines in the leading trivia of a syntax node
+    /// </summary>
+    /// <param name="node">Syntax node to analyze</param>
+    /// <returns>Number of consecutive blank lines before the node</returns>
+    public static int CountBlankLinesBefore(SyntaxNode node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+
+        var leadingTrivia = node.GetLeadingTrivia().ToFullString();
+
+        // Split into lines and count consecutive empty lines from the end
+        var lines = leadingTrivia.Split('\n');
+        int blankLineCount = 0;
+
+        // Count from the end (working backwards from the declaration)
+        // Skip the last line as it's the indentation of the current line
+        for (int i = lines.Length - 2; i >= 0; i--)
+        {
+            var line = lines[i].Trim('\r', ' ', '\t');
+            if (string.IsNullOrEmpty(line))
+            {
+                blankLineCount++;
+            }
+            else
+            {
+                // Stop when we hit a non-blank line
+                break;
+            }
+        }
+
+        return blankLineCount;
+    }
+
+    /// <summary>
+    /// Validates that no code outside documentation was modified
+    /// </summary>
+    /// <param name="originalContent">Original file content</param>
+    /// <param name="modifiedContent">Modified file content</param>
+    /// <param name="insertedDocumentation">The documentation that was inserted (including line ending)</param>
+    /// <param name="insertionPosition">Position where documentation was inserted</param>
+    /// <returns>True if only documentation was added, false if other changes detected</returns>
+    public static bool ValidateOnlyDocumentationAdded(string originalContent, string modifiedContent, string insertedDocumentation, int insertionPosition)
+    {
+        ArgumentNullException.ThrowIfNull(originalContent);
+        ArgumentNullException.ThrowIfNull(modifiedContent);
+        ArgumentNullException.ThrowIfNull(insertedDocumentation);
+
+        if (insertionPosition < 0 || insertionPosition > originalContent.Length)
+            return false;
+
+        // Normalize line endings
+        var normalizedOriginal = originalContent.Replace("\r\n", "\n");
+        var normalizedModified = modifiedContent.Replace("\r\n", "\n");
+        var normalizedInserted = insertedDocumentation.Replace("\r\n", "\n");
+
+        // Expected length: original + inserted doc (which includes line ending)
+        var expectedLength = normalizedOriginal.Length + normalizedInserted.Length;
+
+        // Check if lengths match
+        if (normalizedModified.Length != expectedLength)
+        {
+            // Length mismatch suggests code was changed beyond documentation
+            return false;
+        }
+
+        // Verify content before insertion point is unchanged
+        var originalBefore = normalizedOriginal.Substring(0, insertionPosition);
+        var modifiedBefore = normalizedModified.Substring(0, insertionPosition);
+
+        if (!string.Equals(originalBefore, modifiedBefore, StringComparison.Ordinal))
+            return false;
+
+        // Verify content after insertion point is unchanged
+        var afterInsertionPosition = insertionPosition + normalizedInserted.Length;
+
+        if (afterInsertionPosition > normalizedModified.Length)
+            return false;
+
+        var originalAfter = normalizedOriginal.Substring(insertionPosition);
+        var modifiedAfter = normalizedModified.Substring(afterInsertionPosition);
+
+        return string.Equals(originalAfter, modifiedAfter, StringComparison.Ordinal);
+    }
 }

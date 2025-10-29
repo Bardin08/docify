@@ -26,7 +26,8 @@ public class DocumentationWriter : IDocumentationWriter
     }
 
     /// <inheritdoc />
-    public async Task<bool> InsertDocumentation(string filePath, string projectPath, string apiIdentifier, string xmlDocumentation)
+    public async Task<bool> InsertDocumentation(string filePath, string projectPath, string apiIdentifier,
+        string xmlDocumentation)
     {
         ArgumentNullException.ThrowIfNull(filePath);
         ArgumentNullException.ThrowIfNull(projectPath);
@@ -44,11 +45,9 @@ public class DocumentationWriter : IDocumentationWriter
 
         try
         {
-            // Create backup before modification
             var backupPath = await _backupManager.CreateBackup(projectPath, new[] { filePath }).ConfigureAwait(false);
             _logger.LogInformation("Backup created at: {BackupPath}", backupPath);
 
-            // Load and parse source file
             var sourceContent = await File.ReadAllTextAsync(filePath).ConfigureAwait(false);
             var lineEnding = FormattingPreserver.DetectLineEnding(sourceContent);
 
@@ -56,40 +55,46 @@ public class DocumentationWriter : IDocumentationWriter
             var syntaxTree = CSharpSyntaxTree.ParseText(sourceText);
             var root = await syntaxTree.GetRootAsync().ConfigureAwait(false);
 
-            // Locate API symbol in syntax tree
             var targetNode = FindApiNode(root, apiIdentifier);
             if (targetNode == null)
-            {
                 throw new AnalysisException($"API symbol '{apiIdentifier}' not found in {filePath}");
-            }
 
-            // Extract indentation from the target node
             var indentation = FormattingPreserver.ExtractIndentation(targetNode);
-
-            // Format XML documentation with indentation
             var formattedXml = FormattingPreserver.FormatXmlDocumentation(xmlDocumentation, indentation, lineEnding);
 
-            // Get insertion point (immediately before the API declaration)
-            var insertionPosition = targetNode.SpanStart;
+            // Get insertion point: We need to insert BEFORE the method's line indentation
+            // The leading trivia contains: previous lines + newline + indentation on method's line
+            // We want to insert after the newline but before the indentation
+            var leadingTriviaFullSpan = targetNode.GetLeadingTrivia().FullSpan;
+            var insertionPosition = leadingTriviaFullSpan.End - indentation.Length;
 
-            // Insert documentation
             var modifiedContent = sourceContent.Insert(insertionPosition, formattedXml + lineEnding);
 
-            // Write modified content atomically
+            var syntaxValidationResult = ValidateSyntax(modifiedContent, filePath);
+            if (!syntaxValidationResult.IsValid)
+            {
+                _logger.LogWarning("Syntax errors detected after documentation insertion in {FilePath}: {Errors}",
+                    filePath, string.Join(", ", syntaxValidationResult.Errors));
+
+                await _backupManager.RestoreBackup(backupPath, projectPath).ConfigureAwait(false);
+
+                throw new AnalysisException(
+                    $"Documentation insertion caused syntax errors in {filePath}. File restored from backup. Errors: {string.Join(", ", syntaxValidationResult.Errors)}");
+            }
+
             await WriteFileAtomically(filePath, modifiedContent).ConfigureAwait(false);
 
-            _logger.LogInformation("Documentation inserted into {FilePath} for API '{ApiIdentifier}'", filePath, apiIdentifier);
+            _logger.LogInformation("Documentation inserted into {FilePath} for API '{ApiIdentifier}'", filePath,
+                apiIdentifier);
 
             return true;
         }
         catch (AnalysisException)
         {
-            // Re-throw analysis exceptions
             throw;
         }
         catch (FileSystemException)
         {
-            // Re-throw file system exceptions
             throw;
         }
         catch (Exception ex)
@@ -100,49 +105,42 @@ public class DocumentationWriter : IDocumentationWriter
 
     private SyntaxNode? FindApiNode(SyntaxNode root, string apiIdentifier)
     {
-        // Try to find method
         var methodNode = root.DescendantNodes()
             .OfType<MethodDeclarationSyntax>()
             .FirstOrDefault(m => m.Identifier.Text == apiIdentifier);
 
         if (methodNode != null) return methodNode;
 
-        // Try to find class
         var classNode = root.DescendantNodes()
             .OfType<ClassDeclarationSyntax>()
             .FirstOrDefault(c => c.Identifier.Text == apiIdentifier);
 
         if (classNode != null) return classNode;
 
-        // Try to find property
         var propertyNode = root.DescendantNodes()
             .OfType<PropertyDeclarationSyntax>()
             .FirstOrDefault(p => p.Identifier.Text == apiIdentifier);
 
         if (propertyNode != null) return propertyNode;
 
-        // Try to find field
         var fieldNode = root.DescendantNodes()
             .OfType<FieldDeclarationSyntax>()
             .FirstOrDefault(f => f.Declaration.Variables.Any(v => v.Identifier.Text == apiIdentifier));
 
         if (fieldNode != null) return fieldNode;
 
-        // Try to find interface
         var interfaceNode = root.DescendantNodes()
             .OfType<InterfaceDeclarationSyntax>()
             .FirstOrDefault(i => i.Identifier.Text == apiIdentifier);
 
         if (interfaceNode != null) return interfaceNode;
 
-        // Try to find enum
         var enumNode = root.DescendantNodes()
             .OfType<EnumDeclarationSyntax>()
             .FirstOrDefault(e => e.Identifier.Text == apiIdentifier);
 
         if (enumNode != null) return enumNode;
 
-        // Try to find struct
         var structNode = root.DescendantNodes()
             .OfType<StructDeclarationSyntax>()
             .FirstOrDefault(s => s.Identifier.Text == apiIdentifier);
@@ -161,20 +159,57 @@ public class DocumentationWriter : IDocumentationWriter
         }
         catch (Exception ex)
         {
-            // Cleanup temp file if it exists
-            if (File.Exists(tempFilePath))
+            if (!File.Exists(tempFilePath))
+                throw new FileSystemException($"Failed to write to file: {filePath}", ex);
+
+            try
             {
-                try
-                {
-                    File.Delete(tempFilePath);
-                }
-                catch
-                {
-                    // Ignore cleanup errors
-                }
+                File.Delete(tempFilePath);
+            }
+            catch
+            {
+                // Ignore cleanup errors
             }
 
             throw new FileSystemException($"Failed to write to file: {filePath}", ex);
         }
+    }
+
+    /// <summary>
+    /// Validates that the modified content has no syntax errors
+    /// </summary>
+    /// <param name="content">File content to validate</param>
+    /// <param name="filePath">File path (for logging)</param>
+    /// <returns>Validation result with error details</returns>
+    private SyntaxValidationResult ValidateSyntax(string content, string filePath)
+    {
+        try
+        {
+            var syntaxTree = CSharpSyntaxTree.ParseText(content);
+            var diagnostics = syntaxTree.GetDiagnostics();
+
+            var errors = diagnostics
+                .Where(d => d.Severity == DiagnosticSeverity.Error)
+                .Select(d => d.GetMessage())
+                .ToList();
+
+            return errors.Count > 0
+                ? new SyntaxValidationResult { IsValid = false, Errors = errors }
+                : new SyntaxValidationResult { IsValid = true, Errors = [] };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to validate syntax for {FilePath}", filePath);
+            return new SyntaxValidationResult { IsValid = false, Errors = [$"Syntax validation failed: {ex.Message}"] };
+        }
+    }
+
+    /// <summary>
+    /// Result of syntax validation
+    /// </summary>
+    private sealed class SyntaxValidationResult
+    {
+        public required bool IsValid { get; init; }
+        public required List<string> Errors { get; init; }
     }
 }

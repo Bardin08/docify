@@ -382,4 +382,51 @@ public class TestClass
         // Assert - temp file should not exist after successful write
         File.Exists(tempFile).ShouldBeFalse();
     }
+
+    [Fact]
+    public async Task InsertDocumentation_WithValidXml_NoSyntaxErrors()
+    {
+        // Arrange
+        var testFile = Path.Combine(_tempProjectPath, "Test.cs");
+        await File.WriteAllTextAsync(testFile, "namespace Test;\n\npublic class TestClass\n{\n    public void MyMethod() { }\n}");
+        _tempFilesCreated.Add(testFile);
+
+        var validXml = "<summary>Valid documentation</summary>";
+
+        // Act
+        var result = await _writer.InsertDocumentation(testFile, _tempProjectPath, "MyMethod", validXml);
+
+        // Assert
+        result.ShouldBeTrue();
+
+        // Verify RestoreBackup was NOT called (no syntax errors)
+        _mockBackupManager.Verify(
+            bm => bm.RestoreBackup(It.IsAny<string>(), It.IsAny<string>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task InsertDocumentation_SyntaxValidation_RunsSuccessfully()
+    {
+        // Arrange
+        var testFile = Path.Combine(_tempProjectPath, "Test.cs");
+        await File.WriteAllTextAsync(testFile, "namespace Test;\n\npublic class TestClass\n{\n    public void MyMethod() { }\n}");
+        _tempFilesCreated.Add(testFile);
+
+        var xml = "<summary>Test documentation</summary>";
+
+        // Act
+        var result = await _writer.InsertDocumentation(testFile, _tempProjectPath, "MyMethod", xml);
+
+        // Assert
+        result.ShouldBeTrue();
+
+        // Verify the modified file is still valid C# (can be parsed)
+        var modifiedContent = await File.ReadAllTextAsync(testFile);
+        var syntaxTree = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(modifiedContent);
+        var diagnostics = syntaxTree.GetDiagnostics();
+        var errors = diagnostics.Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+
+        errors.ShouldBeEmpty();
+    }
 }
