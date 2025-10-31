@@ -3,14 +3,14 @@ using Shouldly;
 
 namespace Docify.Core.Tests.Analyzers;
 
-public class ProjectValidatorTests
+public class ProjectPathUtilsTests
 {
     [Fact]
     public void ValidateProjectPath_NullPath_ThrowsArgumentNullException()
     {
         // Act & Assert
         Should.Throw<ArgumentNullException>(() =>
-            ProjectValidator.ValidateProjectPath(null!));
+            ProjectPathUtils.ValidateProjectPath(null!));
     }
 
     [Theory]
@@ -19,7 +19,7 @@ public class ProjectValidatorTests
     public void ValidateProjectPath_EmptyOrWhitespacePath_ReturnsFailure(string path)
     {
         // Act
-        var result = ProjectValidator.ValidateProjectPath(path);
+        var result = ProjectPathUtils.ValidateProjectPath(path);
 
         // Assert
         result.IsValid.ShouldBeFalse();
@@ -33,7 +33,7 @@ public class ProjectValidatorTests
         var path = "/non/existent/path/project.csproj";
 
         // Act
-        var result = ProjectValidator.ValidateProjectPath(path);
+        var result = ProjectPathUtils.ValidateProjectPath(path);
 
         // Assert
         result.IsValid.ShouldBeFalse();
@@ -53,7 +53,7 @@ public class ProjectValidatorTests
         try
         {
             // Act
-            var result = ProjectValidator.ValidateProjectPath(tempFile);
+            var result = ProjectPathUtils.ValidateProjectPath(tempFile);
 
             // Assert
             result.IsValid.ShouldBeFalse();
@@ -84,7 +84,7 @@ public class ProjectValidatorTests
         try
         {
             // Act
-            var result = ProjectValidator.ValidateProjectPath(tempFile);
+            var result = ProjectPathUtils.ValidateProjectPath(tempFile);
 
             // Assert
             result.IsValid.ShouldBeTrue();

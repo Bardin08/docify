@@ -22,7 +22,7 @@ public class RoslynAnalyzer(ILogger<RoslynAnalyzer> logger, ISymbolExtractor sym
 
         EnsureMSBuildRegistered();
 
-        var validationResult = ProjectValidator.ValidateProjectPath(projectPath);
+        var validationResult = ProjectPathUtils.ValidateProjectPath(projectPath);
         if (!validationResult.IsValid)
             throw new ProjectLoadException(validationResult.ErrorMessage!);
 

@@ -10,6 +10,10 @@ namespace Docify.CLI.Formatters;
 public class TextReportFormatter(ILogger<TextReportFormatter> logger) : ReportFormatterBase, IReportFormatter
 {
     /// <inheritdoc/>
+    /// <summary>Converts the provided AnalysisResult into a string representation, optionally including contextual information.</summary>
+    /// <param name="result">The analysis result to convert into a string.</param>
+    /// <param name="includeContext">Indicates whether contextual information is included in the output.</param>
+    /// <returns>A string representation of the analysis result, optionally including context.</returns>
     public string Format(AnalysisResult result, bool includeContext = false)
     {
         ArgumentNullException.ThrowIfNull(result);

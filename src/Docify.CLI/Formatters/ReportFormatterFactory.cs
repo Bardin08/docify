@@ -9,6 +9,9 @@ public class ReportFormatterFactory(
     MarkdownReportFormatter markdownFormatter) : IReportFormatterFactory
 {
     /// <inheritdoc/>
+    /// <summary>Creates an IReportFormatter configured for the specified format. The returned formatter is ready to generate reports in the requested format.</summary>
+    /// <param name="format">The output format used to configure the returned formatter.</param>
+    /// <returns>An IReportFormatter configured for the specified format.</returns>
     public IReportFormatter GetFormatter(string format)
     {
         ArgumentNullException.ThrowIfNull(format);
