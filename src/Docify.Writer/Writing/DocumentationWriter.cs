@@ -45,15 +45,15 @@ public class DocumentationWriter : IDocumentationWriter
 
         try
         {
-            var backupPath = await _backupManager.CreateBackup(projectPath, new[] { filePath }).ConfigureAwait(false);
+            var backupPath = await _backupManager.CreateBackup(projectPath, [filePath]);
             _logger.LogInformation("Backup created at: {BackupPath}", backupPath);
 
-            var sourceContent = await File.ReadAllTextAsync(filePath).ConfigureAwait(false);
+            var sourceContent = await File.ReadAllTextAsync(filePath);
             var lineEnding = FormattingPreserver.DetectLineEnding(sourceContent);
 
             var sourceText = SourceText.From(sourceContent);
             var syntaxTree = CSharpSyntaxTree.ParseText(sourceText);
-            var root = await syntaxTree.GetRootAsync().ConfigureAwait(false);
+            var root = await syntaxTree.GetRootAsync();
 
             var targetNode = FindApiNode(root, apiIdentifier);
             if (targetNode == null)
@@ -76,13 +76,13 @@ public class DocumentationWriter : IDocumentationWriter
                 _logger.LogWarning("Syntax errors detected after documentation insertion in {FilePath}: {Errors}",
                     filePath, string.Join(", ", syntaxValidationResult.Errors));
 
-                await _backupManager.RestoreBackup(backupPath, projectPath).ConfigureAwait(false);
+                await _backupManager.RestoreBackup(backupPath, projectPath);
 
                 throw new AnalysisException(
                     $"Documentation insertion caused syntax errors in {filePath}. File restored from backup. Errors: {string.Join(", ", syntaxValidationResult.Errors)}");
             }
 
-            await WriteFileAtomically(filePath, modifiedContent).ConfigureAwait(false);
+            await WriteFileAtomically(filePath, modifiedContent);
 
             _logger.LogInformation("Documentation inserted into {FilePath} for API '{ApiIdentifier}'", filePath,
                 apiIdentifier);
@@ -154,7 +154,7 @@ public class DocumentationWriter : IDocumentationWriter
 
         try
         {
-            await File.WriteAllTextAsync(tempFilePath, content).ConfigureAwait(false);
+            await File.WriteAllTextAsync(tempFilePath, content);
             File.Move(tempFilePath, filePath, overwrite: true);
         }
         catch (Exception ex)

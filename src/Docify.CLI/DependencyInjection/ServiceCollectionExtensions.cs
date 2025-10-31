@@ -1,3 +1,7 @@
+using Docify.Application.Generation.Interfaces;
+using Docify.Application.Generation.Services;
+using Docify.Core.Caching;
+using Docify.Core.Interfaces;
 using Docify.LLM.Abstractions;
 using Docify.LLM.Configuration;
 using Docify.LLM.ContextCollection;
@@ -52,6 +56,22 @@ public static class ServiceCollectionExtensions
     {
         services.AddSingleton<IBackupManager, BackupManager>();
         services.AddSingleton<IDocumentationWriter, DocumentationWriter>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds Core services including caching and generation orchestration.
+    /// </summary>
+    public static IServiceCollection AddCoreServices(this IServiceCollection services)
+    {
+        // Caching
+        services.AddSingleton<IDryRunCache, DryRunCacheManager>();
+
+        // Generation services
+        services.AddSingleton<IPreviewGenerator, PreviewGenerator>();
+        services.AddSingleton<IParallelDocumentationGenerator, ParallelDocumentationGenerator>();
+        services.AddSingleton<IDocumentationOrchestrator, DocumentationOrchestrator>();
 
         return services;
     }

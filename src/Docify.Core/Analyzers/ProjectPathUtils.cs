@@ -1,9 +1,12 @@
+using System.Security.Cryptography;
+using System.Text;
+
 namespace Docify.Core.Analyzers;
 
 /// <summary>
 /// Validates project file paths before analysis.
 /// </summary>
-public static class ProjectValidator
+public static class ProjectPathUtils
 {
     private static readonly string[] _validExtensions = [".csproj", ".sln"];
 
@@ -28,6 +31,16 @@ public static class ProjectValidator
                 $"Invalid file extension '{extension}'. Expected .csproj or .sln file.");
 
         return ValidationResult.Success();
+    }
+
+    /// <summary>
+    /// Calculates SHA256 hash of the absolute project path for cache file naming
+    /// </summary>
+    public static string CalculateProjectHash(string projectPath)
+    {
+        var absolutePath = Path.GetFullPath(projectPath);
+        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(absolutePath));
+        return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
 }
 

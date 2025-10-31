@@ -25,6 +25,7 @@ try
         .AddSingleton<JsonReportFormatter>()
         .AddSingleton<MarkdownReportFormatter>()
         .AddSingleton<IReportFormatterFactory, ReportFormatterFactory>()
+        .AddCoreServices()
         .AddLlmServices()
         .AddWriterServices()
         .AddSingleton<AnalyzeCommand>()
@@ -42,12 +43,12 @@ finally
     await Log.CloseAndFlushAsync();
 }
 
-RootCommand ConstructRootCommand(IServiceProvider sp1)
+RootCommand ConstructRootCommand(IServiceProvider sp)
 {
     var rootCommand = new RootCommand("Docify - AI-Powered XML Documentation Generator for .NET");
-    rootCommand.AddCommand(sp1.GetRequiredService<AnalyzeCommand>());
-    rootCommand.AddCommand(sp1.GetRequiredService<GenerateCommand>());
-    rootCommand.AddCommand(sp1.GetRequiredService<ConfigCommand>());
-    rootCommand.AddCommand(sp1.GetRequiredService<RestoreCommand>());
+    rootCommand.AddCommand(sp.GetRequiredService<AnalyzeCommand>());
+    rootCommand.AddCommand(sp.GetRequiredService<GenerateCommand>());
+    rootCommand.AddCommand(sp.GetRequiredService<ConfigCommand>());
+    rootCommand.AddCommand(sp.GetRequiredService<RestoreCommand>());
     return rootCommand;
 }

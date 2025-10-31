@@ -15,6 +15,10 @@ public class JsonReportFormatter(ILogger<JsonReportFormatter> logger) : ReportFo
     };
 
     /// <inheritdoc/>
+    /// <summary>Formats the provided AnalysisResult into a string representation, optionally including contextual information.</summary>
+    /// <param name="result">The AnalysisResult to format into a string.</param>
+    /// <param name="includeContext">Whether to include contextual information in the output.</param>
+    /// <returns>A string representation of the analysis results, formatted for display or logging.</returns>
     public string Format(AnalysisResult result, bool includeContext = false)
     {
         ArgumentNullException.ThrowIfNull(result);
