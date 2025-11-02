@@ -21,6 +21,7 @@ public sealed class DocumentationOrchestrator(
     IDocumentationWriter documentationWriter,
     IDryRunCache dryRunCache,
     IPreviewGenerator previewGenerator,
+    IUserConfirmation userConfirmation,
     ILogger<DocumentationOrchestrator> logger)
     : IDocumentationOrchestrator
 {
@@ -123,49 +124,103 @@ public sealed class DocumentationOrchestrator(
         List<GeneratedDocumentation> suggestions,
         CancellationToken cancellationToken)
     {
-        var successCount = 0;
-        var failedFiles = new List<string>();
-        var modifiedFiles = new HashSet<string>();
+        // Group suggestions by file path for efficient batch writing
+        var suggestionsByFile = suggestions
+            .GroupBy(s => s.FilePath)
+            .ToList();
 
-        for (var i = 0; i < suggestions.Count; i++)
+        var totalFiles = suggestionsByFile.Count;
+        var totalChanges = suggestions.Count;
+
+        // Prompt user for confirmation
+        var confirmed = await userConfirmation.ConfirmBatchWrite(totalChanges, totalFiles).ConfigureAwait(false);
+        if (!confirmed)
         {
-            var suggestion = suggestions[i];
-            logger.LogInformation("[Write Progress: {Current}/{Total}] Writing to {FilePath}",
-                i + 1, suggestions.Count, suggestion.FilePath);
+            logger.LogInformation("User declined to write documentation changes.");
+            return GenerationResult.Error(GenerationStatus.WriteFailed, "User cancelled write operation");
+        }
+
+        logger.LogInformation("Writing {TotalChanges} documentation changes to {TotalFiles} files...",
+            totalChanges, totalFiles);
+
+        var successCount = 0;
+        var failedFiles = new List<(string FilePath, string ErrorMessage)>();
+
+        // Batch write loop with file-by-file progress
+        for (var i = 0; i < suggestionsByFile.Count; i++)
+        {
+            var fileGroup = suggestionsByFile[i];
+            var filePath = fileGroup.Key;
+            var currentFileIndex = i + 1;
+
+            logger.LogInformation("Writing to {FilePath}... [{Current}/{Total}]",
+                filePath, currentFileIndex, totalFiles);
 
             try
             {
-                var simpleName = suggestion.ApiSymbol.FullyQualifiedName.Split('.').Last();
-                var success = await documentationWriter.InsertDocumentation(
-                    suggestion.FilePath,
-                    projectPath,
-                    simpleName,
-                    suggestion.XmlDocumentation);
-
-                if (success)
+                // Write all documentation entries for this file
+                foreach (var suggestion in fileGroup)
                 {
-                    successCount++;
-                    modifiedFiles.Add(suggestion.FilePath);
+                    var simpleName = suggestion.ApiSymbol.FullyQualifiedName.Split('.').Last();
+                    var success = await documentationWriter.InsertDocumentation(
+                        suggestion.FilePath,
+                        projectPath,
+                        simpleName,
+                        suggestion.XmlDocumentation).ConfigureAwait(false);
+
+                    if (!success)
+                    {
+                        throw new InvalidOperationException($"Documentation insertion failed for {simpleName}");
+                    }
                 }
-                else
-                    failedFiles.Add(suggestion.FilePath);
+
+                successCount++;
+            }
+            catch (IOException ex)
+            {
+                logger.LogWarning("Failed to write to {FilePath}: {ErrorMessage}", filePath, ex.Message);
+                failedFiles.Add((filePath, ex.Message));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                logger.LogWarning("Failed to write to {FilePath}: {ErrorMessage}", filePath, ex.Message);
+                failedFiles.Add((filePath, ex.Message));
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Failed to write documentation to {FilePath}", suggestion.FilePath);
-                failedFiles.Add(suggestion.FilePath);
+                logger.LogWarning(ex, "Failed to write to {FilePath}: {ErrorMessage}", filePath, ex.Message);
+                failedFiles.Add((filePath, ex.Message));
             }
         }
 
-        // Clear cache after successful write
-        await dryRunCache.ClearCache(projectPath, cancellationToken);
+        // Clear cache after successful write (even with partial success)
+        if (successCount > 0)
+        {
+            await dryRunCache.ClearCache(projectPath, cancellationToken).ConfigureAwait(false);
+            logger.LogInformation("Dry-run cache cleared.");
+        }
 
-        logger.LogInformation("Documentation generation complete: {SuccessCount} successful, {FailedCount} failed",
-            successCount, failedFiles.Count);
+        // Display completion summary
+        logger.LogInformation("Successfully wrote to {SuccessCount} files.", successCount);
+        if (failedFiles.Count > 0)
+        {
+            logger.LogWarning("{FailedCount} files failed (see log for details).", failedFiles.Count);
+            foreach (var (filePath, errorMessage) in failedFiles)
+            {
+                logger.LogWarning("  - {FilePath}: {ErrorMessage}", filePath, errorMessage);
+            }
+        }
+
+        // TODO: Session state update (POST-MVP - Epic 4)
+        // Once Session model exists, update session persistence here:
+        // await _sessionManager.UpdateSessionState(sessionId, acceptedSuggestions);
+        // await _sessionManager.MarkAsCommitted(sessionId, writtenSymbolIds);
 
         var status = failedFiles.Count > 0 ? GenerationStatus.WriteFailed : GenerationStatus.Success;
-        var message = failedFiles.Count > 0 ? $"{failedFiles.Count} files failed" : "All files written successfully";
+        var message = failedFiles.Count > 0
+            ? $"{successCount} files written, {failedFiles.Count} failed"
+            : "All files written successfully";
 
-        return new GenerationResult(status, message, 0, successCount, modifiedFiles.Count);
+        return new GenerationResult(status, message, 0, totalChanges, successCount);
     }
 }

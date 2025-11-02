@@ -1,5 +1,6 @@
 using Docify.Application.Generation.Interfaces;
 using Docify.Application.Generation.Services;
+using Docify.CLI.UserInteraction;
 using Docify.Core.Caching;
 using Docify.Core.Interfaces;
 using Docify.LLM.Abstractions;
@@ -67,6 +68,9 @@ public static class ServiceCollectionExtensions
     {
         // Caching
         services.AddSingleton<IDryRunCache, DryRunCacheManager>();
+
+        // User interaction
+        services.AddSingleton<IUserConfirmation, ConsoleUserConfirmation>();
 
         // Generation services
         services.AddSingleton<IPreviewGenerator, PreviewGenerator>();
