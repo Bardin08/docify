@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Docify.Writer.Exceptions;
 using Docify.Writer.Interfaces;
+using Docify.Writer.Models;
 using Microsoft.Extensions.Logging;
 
 namespace Docify.Writer.Backup;
@@ -70,48 +71,60 @@ public class BackupManager : IBackupManager
     }
 
     /// <inheritdoc />
-    public async Task<int> RestoreBackup(string backupPath, string projectPath)
+    public async Task<RestoreResult> RestoreBackup(string backupPath, string projectPath)
     {
         ArgumentNullException.ThrowIfNull(backupPath);
         ArgumentNullException.ThrowIfNull(projectPath);
 
-        if (!ValidateBackup(backupPath)) throw new FileSystemException($"Invalid backup directory: {backupPath}");
+        // Validate backup directory exists
+        if (!Directory.Exists(backupPath))
+            throw new InvalidBackupException($"Backup directory not found: {backupPath}");
+
+        // Validate backup directory is not empty
+        var backupFiles = Directory.GetFiles(backupPath, "*", SearchOption.AllDirectories);
+        if (backupFiles.Length == 0)
+            throw new InvalidBackupException($"Backup directory is empty: {backupPath}");
 
         if (!Path.IsPathFullyQualified(projectPath))
             throw new ArgumentException("Project path must be absolute", nameof(projectPath));
 
-        var restoredCount = 0;
+        var filesRestored = 0;
+        var failedFiles = new List<(string FilePath, string ErrorMessage)>();
 
-        try
+        foreach (var backupFilePath in backupFiles)
         {
-            var backupFiles = Directory.GetFiles(backupPath, "*", SearchOption.AllDirectories);
+            var relativePath = Path.GetRelativePath(backupPath, backupFilePath);
+            var targetPath = Path.Combine(projectPath, relativePath);
 
-            foreach (var backupFilePath in backupFiles)
+            try
             {
-                var relativePath = Path.GetRelativePath(backupPath, backupFilePath);
-                var targetPath = Path.Combine(projectPath, relativePath);
-
-                try
-                {
-                    await RestoreFile(backupFilePath, targetPath);
-                    restoredCount++;
-                    _logger.LogDebug("Restored file: {FilePath}", targetPath);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to restore file: {FilePath}", targetPath);
-                    // Continue with remaining files
-                }
+                await RestoreFile(backupFilePath, targetPath);
+                filesRestored++;
+                _logger.LogInformation("Restored: {FilePath}", relativePath);
             }
-
-            _logger.LogInformation("Restored {Count} files from {BackupPath}", restoredCount, backupPath);
-
-            return restoredCount;
+            catch (IOException ex)
+            {
+                _logger.LogWarning("Failed to restore {FilePath}: {ErrorMessage}", relativePath, ex.Message);
+                failedFiles.Add((backupFilePath, ex.Message));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning("Failed to restore {FilePath}: {ErrorMessage}", relativePath, ex.Message);
+                failedFiles.Add((backupFilePath, ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error restoring {FilePath}: {ErrorMessage}", relativePath, ex.Message);
+                failedFiles.Add((backupFilePath, ex.Message));
+            }
         }
-        catch (Exception ex) when (ex is not FileSystemException)
-        {
-            throw new FileSystemException($"Failed to restore backup from: {backupPath}", ex);
-        }
+
+        var success = failedFiles.Count == 0;
+
+        _logger.LogInformation("Restored {FilesRestored}/{TotalFiles} files from {BackupPath}",
+            filesRestored, backupFiles.Length, backupPath);
+
+        return new RestoreResult(success, filesRestored, failedFiles);
     }
 
     /// <inheritdoc />

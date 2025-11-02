@@ -81,10 +81,12 @@ public class BackupWorkflowTests : IDisposable
         await File.WriteAllTextAsync(file3, "/// <summary>Modified</summary>\n" + originalContent3);
 
         // Act - Restore from backup
-        var restoredCount = await _backupManager.RestoreBackup(backupPath, _tempProjectPath);
+        var result = await _backupManager.RestoreBackup(backupPath, _tempProjectPath);
 
         // Assert - Verify restoration
-        restoredCount.ShouldBe(3);
+        result.Success.ShouldBeTrue();
+        result.FilesRestored.ShouldBe(3);
+        result.FailedFiles.ShouldBeEmpty();
 
         var restored1 = await File.ReadAllTextAsync(file1);
         var restored2 = await File.ReadAllTextAsync(file2);
@@ -175,10 +177,12 @@ public class BackupWorkflowTests : IDisposable
         Directory.Delete(Path.GetDirectoryName(file)!, recursive: true);
 
         // Act - Restore should recreate directories
-        var restoredCount = await _backupManager.RestoreBackup(backupPath, _tempProjectPath);
+        var result = await _backupManager.RestoreBackup(backupPath, _tempProjectPath);
 
         // Assert
-        restoredCount.ShouldBe(1);
+        result.Success.ShouldBeTrue();
+        result.FilesRestored.ShouldBe(1);
+        result.FailedFiles.ShouldBeEmpty();
         File.Exists(file).ShouldBeTrue();
         (await File.ReadAllTextAsync(file)).ShouldBe("original");
     }
@@ -248,8 +252,10 @@ public class BackupWorkflowTests : IDisposable
             await File.WriteAllTextAsync(file, "modified");
 
             // Restore should overwrite even if original was read-only
-            var restoredCount = await _backupManager.RestoreBackup(backupPath, _tempProjectPath);
-            restoredCount.ShouldBe(1);
+            var result = await _backupManager.RestoreBackup(backupPath, _tempProjectPath);
+            result.Success.ShouldBeTrue();
+            result.FilesRestored.ShouldBe(1);
+            result.FailedFiles.ShouldBeEmpty();
 
             (await File.ReadAllTextAsync(file)).ShouldBe("original");
         }

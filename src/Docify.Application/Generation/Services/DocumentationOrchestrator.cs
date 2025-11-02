@@ -19,6 +19,7 @@ public sealed class DocumentationOrchestrator(
     ILlmConfigurationService llmConfigurationService,
     IParallelDocumentationGenerator parallelGenerator,
     IDocumentationWriter documentationWriter,
+    IBackupManager backupManager,
     IDryRunCache dryRunCache,
     IPreviewGenerator previewGenerator,
     IUserConfirmation userConfirmation,
@@ -140,6 +141,20 @@ public sealed class DocumentationOrchestrator(
             return GenerationResult.Error(GenerationStatus.WriteFailed, "User cancelled write operation");
         }
 
+        // Create backup before writing
+        var filesToBackup = suggestionsByFile.Select(g => g.Key).ToList();
+        string? backupPath = null;
+        try
+        {
+            backupPath = await backupManager.CreateBackup(projectPath, filesToBackup).ConfigureAwait(false);
+            logger.LogInformation("Created backup at: {BackupPath}", backupPath);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to create backup before write operation");
+            return GenerationResult.Error(GenerationStatus.WriteFailed, "Backup creation failed");
+        }
+
         logger.LogInformation("Writing {TotalChanges} documentation changes to {TotalFiles} files...",
             totalChanges, totalFiles);
 
@@ -180,6 +195,15 @@ public sealed class DocumentationOrchestrator(
             {
                 logger.LogWarning("Failed to write to {FilePath}: {ErrorMessage}", filePath, ex.Message);
                 failedFiles.Add((filePath, ex.Message));
+
+                // Log rollback suggestion for critical I/O errors
+                if (ex.Message.Contains("disk full", StringComparison.OrdinalIgnoreCase) ||
+                    ex.Message.Contains("out of space", StringComparison.OrdinalIgnoreCase) ||
+                    ex.Message.Contains("insufficient", StringComparison.OrdinalIgnoreCase))
+                {
+                    logger.LogError(ex, "Write operation failed due to insufficient disk space.");
+                    logger.LogWarning("Consider rollback: docify rollback {BackupPath}", backupPath);
+                }
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -205,10 +229,11 @@ public sealed class DocumentationOrchestrator(
         if (failedFiles.Count > 0)
         {
             logger.LogWarning("{FailedCount} files failed (see log for details).", failedFiles.Count);
+            logger.LogWarning("Write operation failed. {SuccessCount} files were modified successfully.", successCount);
+            logger.LogInformation("To rollback changes, run: docify rollback {BackupPath}", backupPath);
+
             foreach (var (filePath, errorMessage) in failedFiles)
-            {
                 logger.LogWarning("  - {FilePath}: {ErrorMessage}", filePath, errorMessage);
-            }
         }
 
         // TODO: Session state update (POST-MVP - Epic 4)

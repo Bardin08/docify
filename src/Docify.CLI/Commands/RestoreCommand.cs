@@ -1,4 +1,5 @@
 using System.CommandLine;
+using Docify.Application.Generation.Interfaces;
 using Docify.Writer.Exceptions;
 using Docify.Writer.Interfaces;
 using Microsoft.Extensions.Logging;
@@ -12,17 +13,21 @@ namespace Docify.CLI.Commands;
 public class RestoreCommand : Command
 {
     private readonly IBackupManager _backupManager;
+    private readonly IUserConfirmation _userConfirmation;
     private readonly ILogger<RestoreCommand> _logger;
 
     public RestoreCommand(
         IBackupManager backupManager,
+        IUserConfirmation userConfirmation,
         ILogger<RestoreCommand> logger)
         : base("restore", "Restore files from a Docify backup")
     {
         ArgumentNullException.ThrowIfNull(backupManager);
+        ArgumentNullException.ThrowIfNull(userConfirmation);
         ArgumentNullException.ThrowIfNull(logger);
 
         _backupManager = backupManager;
+        _userConfirmation = userConfirmation;
         _logger = logger;
 
         var backupPathArgument = new Argument<string>(
@@ -78,36 +83,40 @@ public class RestoreCommand : Command
             // Prompt user for confirmation unless --yes is specified
             if (!skipConfirmation)
             {
-                AnsiConsole.MarkupLine("[yellow]Warning:[/] This will overwrite {0} file(s) in: {1}", fileCount, projectPath);
-
-                if (!AnsiConsole.Confirm("Do you want to continue?", defaultValue: false))
+                var confirmed = await _userConfirmation.ConfirmRollback(fileCount, backupPath);
+                if (!confirmed)
                 {
-                    AnsiConsole.MarkupLine("[yellow]Restore cancelled.[/]");
+                    _logger.LogInformation("Rollback cancelled by user.");
                     return 0;
                 }
             }
 
             // Perform restoration with progress indicator
-            int restoredCount = 0;
+            var result = await AnsiConsole.Status()
+                .StartAsync("Restoring files...", async ctx => await _backupManager.RestoreBackup(backupPath, projectPath));
 
-            await AnsiConsole.Status()
-                .StartAsync("Restoring files...", async ctx =>
-                {
-                    restoredCount = await _backupManager.RestoreBackup(backupPath, projectPath);
-                });
-
-            if (restoredCount > 0)
+            if (result.Success)
             {
-                AnsiConsole.MarkupLine("[green]Success:[/] Restored {0} file(s) from backup.", restoredCount);
-                _logger.LogInformation("Successfully restored {Count} files from {BackupPath}", restoredCount, backupPath);
+                _logger.LogInformation("Restored {FileCount} files from {BackupPath}.", result.FilesRestored, backupPath);
             }
             else
             {
-                AnsiConsole.MarkupLine("[yellow]Warning:[/] No files were restored.");
-                _logger.LogWarning("No files restored from {BackupPath}", backupPath);
+                _logger.LogError("Rollback failed. {FilesRestored} files restored, {FailedCount} failed.",
+                    result.FilesRestored, result.FailedFiles.Count);
+                foreach (var (filePath, errorMessage) in result.FailedFiles)
+                {
+                    _logger.LogError("  - {FilePath}: {ErrorMessage}", filePath, errorMessage);
+                }
+                return 1;
             }
 
             return 0;
+        }
+        catch (InvalidBackupException ex)
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] {0}", ex.Message);
+            _logger.LogError(ex, "Invalid backup directory");
+            return 1;
         }
         catch (FileSystemException ex)
         {
