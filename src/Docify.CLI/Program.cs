@@ -32,6 +32,7 @@ try
         .AddSingleton<GenerateCommand>()
         .AddSingleton<ConfigCommand>()
         .AddSingleton<RestoreCommand>()
+        .AddSingleton<RollbackCommand>()
         .AddSingleton(ConstructRootCommand)
         .BuildServiceProvider();
 
@@ -50,5 +51,6 @@ RootCommand ConstructRootCommand(IServiceProvider sp)
     rootCommand.AddCommand(sp.GetRequiredService<GenerateCommand>());
     rootCommand.AddCommand(sp.GetRequiredService<ConfigCommand>());
     rootCommand.AddCommand(sp.GetRequiredService<RestoreCommand>());
+    rootCommand.AddCommand(sp.GetRequiredService<RollbackCommand>());
     return rootCommand;
 }

@@ -1,3 +1,5 @@
+using Docify.Writer.Models;
+
 namespace Docify.Writer.Interfaces;
 
 /// <summary>
@@ -18,8 +20,8 @@ public interface IBackupManager
     /// </summary>
     /// <param name="backupPath">Absolute path to the backup directory</param>
     /// <param name="projectPath">Absolute path to the project root (original location)</param>
-    /// <returns>Count of files successfully restored</returns>
-    Task<int> RestoreBackup(string backupPath, string projectPath);
+    /// <returns>Restore result with success status, file count, and any failures</returns>
+    Task<RestoreResult> RestoreBackup(string backupPath, string projectPath);
 
     /// <summary>
     /// Validates that a backup directory exists and contains valid backup structure

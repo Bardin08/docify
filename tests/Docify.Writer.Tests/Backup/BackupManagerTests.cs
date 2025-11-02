@@ -225,10 +225,12 @@ public class BackupManagerTests : IDisposable
         await File.WriteAllTextAsync(originalFile, "modified content");
 
         // Act
-        var restoredCount = await _backupManager.RestoreBackup(backupPath, _tempProjectPath);
+        var result = await _backupManager.RestoreBackup(backupPath, _tempProjectPath);
 
         // Assert
-        restoredCount.ShouldBe(1);
+        result.Success.ShouldBeTrue();
+        result.FilesRestored.ShouldBe(1);
+        result.FailedFiles.ShouldBeEmpty();
         var restoredContent = await File.ReadAllTextAsync(originalFile);
         restoredContent.ShouldBe("original content");
     }
@@ -254,23 +256,38 @@ public class BackupManagerTests : IDisposable
         await File.WriteAllTextAsync(file2, "modified2");
 
         // Act
-        var restoredCount = await _backupManager.RestoreBackup(backupPath, _tempProjectPath);
+        var result = await _backupManager.RestoreBackup(backupPath, _tempProjectPath);
 
         // Assert
-        restoredCount.ShouldBe(2);
+        result.Success.ShouldBeTrue();
+        result.FilesRestored.ShouldBe(2);
+        result.FailedFiles.ShouldBeEmpty();
         (await File.ReadAllTextAsync(file1)).ShouldBe("content1");
         (await File.ReadAllTextAsync(file2)).ShouldBe("content2");
     }
 
     [Fact]
-    public async Task RestoreBackup_WithInvalidBackupPath_ThrowsFileSystemException()
+    public async Task RestoreBackup_WithInvalidBackupPath_ThrowsInvalidBackupException()
     {
         // Arrange
         var invalidPath = Path.Combine(Path.GetTempPath(), "nonexistent-backup");
 
         // Act & Assert
-        await Should.ThrowAsync<FileSystemException>(async () =>
+        await Should.ThrowAsync<InvalidBackupException>(async () =>
             await _backupManager.RestoreBackup(invalidPath, _tempProjectPath));
+    }
+
+    [Fact]
+    public async Task RestoreBackup_WithEmptyDirectory_ThrowsInvalidBackupException()
+    {
+        // Arrange
+        var emptyBackupDir = Path.Combine(Path.GetTempPath(), $"empty-backup-{Guid.NewGuid()}");
+        Directory.CreateDirectory(emptyBackupDir);
+        _tempDirsCreated.Add(emptyBackupDir);
+
+        // Act & Assert
+        await Should.ThrowAsync<InvalidBackupException>(async () =>
+            await _backupManager.RestoreBackup(emptyBackupDir, _tempProjectPath));
     }
 
     [Fact]
